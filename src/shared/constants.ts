@@ -22,6 +22,15 @@ export const AI_DEFAULT_TEMPERATURE = 0.7;
 export const AI_DEFAULT_MAX_TOKENS = 4096;
 export const AI_EMBEDDING_MODEL = 'openai/text-embedding-3-small';
 
+// Available embedding models on OpenRouter
+export const EMBEDDING_MODELS = [
+  { id: 'openai/text-embedding-3-small', name: 'OpenAI text-embedding-3-small', dimensions: 1536 },
+  { id: 'openai/text-embedding-3-large', name: 'OpenAI text-embedding-3-large', dimensions: 3072 },
+  { id: 'openai/text-embedding-ada-002', name: 'OpenAI Ada 002', dimensions: 1536 },
+  { id: 'cohere/embed-english-v3.0', name: 'Cohere Embed English v3', dimensions: 1024 },
+  { id: 'cohere/embed-multilingual-v3.0', name: 'Cohere Embed Multilingual v3', dimensions: 1024 },
+] as const;
+
 // Embeddings
 export const EMBEDDING_CHUNK_SIZE = 500; // tokens
 export const EMBEDDING_CHUNK_OVERLAP = 50; // tokens
@@ -32,7 +41,7 @@ export const SEARCH_RESULTS_LIMIT = 50;
 export const SEMANTIC_SEARCH_LIMIT = 10;
 
 // Database
-export const DATABASE_VERSION = 10;
+export const DATABASE_VERSION = 11;
 export const DATABASE_FILENAME = 'notnative.db';
 
 // File watching

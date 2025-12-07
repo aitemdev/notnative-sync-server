@@ -149,6 +149,9 @@ export interface ToolCall {
   result?: unknown;
 }
 
+// ============== THEME ==============
+export * from './theme';
+
 // ============== REMINDERS ==============
 export type ReminderPriority = 0 | 1 | 2 | 3; // low, medium, high, urgent
 export type ReminderStatus = 0 | 1 | 2; // pending, completed, snoozed
@@ -184,4 +187,14 @@ export interface SemanticSearchResult {
   notePath: string;
   chunkText: string;
   similarity: number;
+}
+
+// ============== AI MODELS ==============
+export interface ModelInfo {
+  id: string;
+  name: string;
+  contextLength: number;
+  pricing: string;
+  isChat: boolean;
+  isEmbedding: boolean;
 }

@@ -1,36 +1,168 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useState, ReactNode } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useChatStore } from '../../stores/chat-store';
 import { useAppStore } from '../../stores/app-store';
 import type { ChatMessage } from '../../../shared/types';
 
-// Catppuccin Mocha colors
-const colors = {
-  base: '#1e1e2e',
-  mantle: '#181825',
-  crust: '#11111b',
-  surface0: '#313244',
-  surface1: '#45475a',
-  surface2: '#585b70',
-  overlay0: '#6c7086',
-  overlay1: '#7f849c',
-  text: '#cdd6f4',
-  subtext0: '#a6adc8',
-  subtext1: '#bac2de',
-  lavender: '#b4befe',
-  blue: '#89b4fa',
-  sapphire: '#74c7ec',
-  sky: '#89dceb',
-  teal: '#94e2d5',
-  green: '#a6e3a1',
-  yellow: '#f9e2af',
-  peach: '#fab387',
-  maroon: '#eba0ac',
-  red: '#f38ba8',
-  mauve: '#cba6f7',
-  pink: '#f5c2e7',
-  flamingo: '#f2cdcd',
-  rosewater: '#f5e0dc',
-};
+// Component to render content with wiki-links as clickable buttons
+function WikiLinkRenderer({ content, onNoteClick }: { content: string; onNoteClick?: (name: string) => void }) {
+  // Split content by wiki-links pattern [[note name]]
+  const parts: ReactNode[] = [];
+  const regex = /\[\[([^\]]+)\]\]/g;
+  let lastIndex = 0;
+  let match;
+  let key = 0;
+
+  while ((match = regex.exec(content)) !== null) {
+    // Add text before the match as ReactMarkdown
+    if (match.index > lastIndex) {
+      const textBefore = content.slice(lastIndex, match.index);
+      parts.push(
+        <ReactMarkdown 
+          key={`md-${key}`} 
+          remarkPlugins={[remarkGfm]}
+          components={{
+            p: ({ children }) => <span>{children}</span>,
+            ul: ({ children }) => <ul className="m-0 mb-2 pl-4 list-disc">{children}</ul>,
+            ol: ({ children }) => <ol className="m-0 mb-2 pl-4 list-decimal">{children}</ol>,
+            li: ({ children }) => <li className="m-0">{children}</li>,
+            code: ({ className, children, ...props }) => {
+              const isInline = !className;
+              return isInline ? (
+                <code className="px-1 py-0.5 rounded bg-surface1 text-lavender text-xs" {...props}>
+                  {children}
+                </code>
+              ) : (
+                <code className={`block p-2 rounded bg-surface1 text-xs overflow-x-auto ${className || ''}`} {...props}>
+                  {children}
+                </code>
+              );
+            },
+            pre: ({ children }) => <pre className="m-0 mb-2">{children}</pre>,
+            h1: ({ children }) => <h1 className="text-base font-bold m-0 mb-2">{children}</h1>,
+            h2: ({ children }) => <h2 className="text-sm font-bold m-0 mb-2">{children}</h2>,
+            h3: ({ children }) => <h3 className="text-sm font-semibold m-0 mb-1">{children}</h3>,
+            strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+            em: ({ children }) => <em className="italic">{children}</em>,
+            a: ({ href, children }) => (
+              <a href={href} target="_blank" rel="noopener noreferrer" className="text-lavender hover:underline">
+                {children}
+              </a>
+            ),
+          }}
+        >
+          {textBefore}
+        </ReactMarkdown>
+      );
+      key++;
+    }
+    
+    // Add the wiki-link as a button
+    const noteName = match[1];
+    parts.push(
+      <button
+        key={`link-${key}`}
+        type="button"
+        onClick={() => {
+          console.log('📄 Clicking wiki-link:', noteName);
+          onNoteClick?.(noteName);
+        }}
+        className="text-green hover:text-teal cursor-pointer font-medium hover:underline bg-transparent border-none p-0 mx-0.5 inline"
+        style={{ font: 'inherit' }}
+      >
+        📄 {noteName}
+      </button>
+    );
+    key++;
+    
+    lastIndex = regex.lastIndex;
+  }
+  
+  // Add remaining text as ReactMarkdown
+  if (lastIndex < content.length) {
+    const textAfter = content.slice(lastIndex);
+    parts.push(
+      <ReactMarkdown 
+        key={`md-${key}`} 
+        remarkPlugins={[remarkGfm]}
+        components={{
+          p: ({ children }) => <span>{children}</span>,
+          ul: ({ children }) => <ul className="m-0 mb-2 pl-4 list-disc">{children}</ul>,
+          ol: ({ children }) => <ol className="m-0 mb-2 pl-4 list-decimal">{children}</ol>,
+          li: ({ children }) => <li className="m-0">{children}</li>,
+          code: ({ className, children, ...props }) => {
+            const isInline = !className;
+            return isInline ? (
+              <code className="px-1 py-0.5 rounded bg-surface1 text-lavender text-xs" {...props}>
+                {children}
+              </code>
+            ) : (
+              <code className={`block p-2 rounded bg-surface1 text-xs overflow-x-auto ${className || ''}`} {...props}>
+                {children}
+              </code>
+            );
+          },
+          pre: ({ children }) => <pre className="m-0 mb-2">{children}</pre>,
+          h1: ({ children }) => <h1 className="text-base font-bold m-0 mb-2">{children}</h1>,
+          h2: ({ children }) => <h2 className="text-sm font-bold m-0 mb-2">{children}</h2>,
+          h3: ({ children }) => <h3 className="text-sm font-semibold m-0 mb-1">{children}</h3>,
+          strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+          em: ({ children }) => <em className="italic">{children}</em>,
+          a: ({ href, children }) => (
+            <a href={href} target="_blank" rel="noopener noreferrer" className="text-lavender hover:underline">
+              {children}
+            </a>
+          ),
+        }}
+      >
+        {textAfter}
+      </ReactMarkdown>
+    );
+  }
+  
+  // If no wiki-links, just render markdown normally
+  if (parts.length === 0) {
+    return (
+      <ReactMarkdown 
+        remarkPlugins={[remarkGfm]}
+        components={{
+          p: ({ children }) => <p className="m-0 mb-2 last:mb-0">{children}</p>,
+          ul: ({ children }) => <ul className="m-0 mb-2 pl-4 list-disc">{children}</ul>,
+          ol: ({ children }) => <ol className="m-0 mb-2 pl-4 list-decimal">{children}</ol>,
+          li: ({ children }) => <li className="m-0">{children}</li>,
+          code: ({ className, children, ...props }) => {
+            const isInline = !className;
+            return isInline ? (
+              <code className="px-1 py-0.5 rounded bg-surface1 text-lavender text-xs" {...props}>
+                {children}
+              </code>
+            ) : (
+              <code className={`block p-2 rounded bg-surface1 text-xs overflow-x-auto ${className || ''}`} {...props}>
+                {children}
+              </code>
+            );
+          },
+          pre: ({ children }) => <pre className="m-0 mb-2">{children}</pre>,
+          h1: ({ children }) => <h1 className="text-base font-bold m-0 mb-2">{children}</h1>,
+          h2: ({ children }) => <h2 className="text-sm font-bold m-0 mb-2">{children}</h2>,
+          h3: ({ children }) => <h3 className="text-sm font-semibold m-0 mb-1">{children}</h3>,
+          strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+          em: ({ children }) => <em className="italic">{children}</em>,
+          a: ({ href, children }) => (
+            <a href={href} target="_blank" rel="noopener noreferrer" className="text-lavender hover:underline">
+              {children}
+            </a>
+          ),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    );
+  }
+  
+  return <div className="whitespace-pre-wrap">{parts}</div>;
+}
 
 export function Chat() {
   const {
@@ -54,11 +186,46 @@ export function Chat() {
   const [error, setError] = useState<string | null>(null);
   
   // Note autocomplete state
-  const { notes } = useAppStore();
+  const { notes, setCurrentNote, setCurrentNoteContent } = useAppStore();
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [mentionStart, setMentionStart] = useState(-1);
+
+  // Handle clicking on a note link in chat messages
+  const handleNoteClick = useCallback(async (noteName: string) => {
+    console.log('🔍 Looking for note:', noteName);
+    console.log('📚 Available notes:', notes.map(n => n.name));
+    
+    // Find the note by name (exact match first)
+    let note = notes.find(n => n.name === noteName);
+    
+    if (!note) {
+      // Try to find by partial match
+      note = notes.find(n => 
+        n.name.toLowerCase().includes(noteName.toLowerCase()) ||
+        noteName.toLowerCase().includes(n.name.toLowerCase())
+      );
+    }
+    
+    if (note) {
+      console.log('✅ Found note:', note.name, note.path);
+      // Set the note first
+      setCurrentNote(note);
+      // Then load and set the content
+      try {
+        const fullNote = await window.electron.notes.read(note.name);
+        if (fullNote && fullNote.content) {
+          console.log('📄 Loaded content length:', fullNote.content.length);
+          setCurrentNoteContent(fullNote.content);
+        }
+      } catch (err) {
+        console.error('❌ Error loading note content:', err);
+      }
+    } else {
+      console.warn(`❌ Note "${noteName}" not found in:`, notes.map(n => n.name));
+    }
+  }, [notes, setCurrentNote, setCurrentNoteContent]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -245,37 +412,25 @@ export function Chat() {
   }, [currentSession]);
 
   return (
-    <div 
-      className="flex flex-col h-full"
-      style={{ backgroundColor: colors.base }}
-    >
+    <div className="flex flex-col h-full bg-base">
       {/* Header */}
-      <div 
-        className="flex items-center justify-between px-4 py-3 border-b"
-        style={{ borderColor: colors.surface0 }}
-      >
+      <div className="flex items-center justify-between px-4 py-3 border-b border-surface0">
         <div className="flex items-center gap-2">
-          <svg className="w-5 h-5" style={{ color: colors.mauve }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg className="w-5 h-5 text-mauve" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
-          <span className="font-medium" style={{ color: colors.text }}>
+          <span className="font-medium text-text">
             AI Assistant
           </span>
           {currentSession && (
-            <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: colors.surface1, color: colors.subtext0 }}>
+            <span className="text-xs px-2 py-0.5 rounded bg-surface1 text-subtext0">
               Session #{currentSession.id}
             </span>
           )}
         </div>
         <button
           onClick={handleNewSession}
-          className="px-3 py-1.5 rounded text-sm transition-colors"
-          style={{ 
-            backgroundColor: colors.surface0,
-            color: colors.text,
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.surface1}
-          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = colors.surface0}
+          className="px-3 py-1.5 rounded text-sm transition-colors bg-surface0 text-text hover:bg-surface1"
         >
           New Chat
         </button>
@@ -285,27 +440,24 @@ export function Chat() {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && !isStreaming && (
           <div className="text-center py-12">
-            <div 
-              className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center"
-              style={{ backgroundColor: colors.surface0 }}
-            >
-              <svg className="w-8 h-8" style={{ color: colors.mauve }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center bg-surface0">
+              <svg className="w-8 h-8 text-mauve" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="10" />
                 <path d="M12 16v-4" />
                 <path d="M12 8h.01" />
               </svg>
             </div>
-            <h3 className="text-lg font-medium mb-2" style={{ color: colors.text }}>
+            <h3 className="text-lg font-medium mb-2 text-text">
               Start a conversation
             </h3>
-            <p className="text-sm max-w-md mx-auto" style={{ color: colors.subtext0 }}>
+            <p className="text-sm max-w-md mx-auto text-subtext0">
               Ask me to search, create, or modify your notes. I can help you organize your knowledge base.
             </p>
           </div>
         )}
 
         {messages.map((msg) => (
-          <MessageBubble key={msg.id} message={msg} />
+          <MessageBubble key={msg.id} message={msg} onNoteClick={handleNoteClick} />
         ))}
 
         {isStreaming && streamingContent && (
@@ -318,14 +470,12 @@ export function Chat() {
               createdAt: new Date(),
             }}
             isStreaming
+            onNoteClick={handleNoteClick}
           />
         )}
 
         {error && (
-          <div 
-            className="p-3 rounded-lg text-sm"
-            style={{ backgroundColor: `${colors.red}20`, color: colors.red }}
-          >
+          <div className="p-3 rounded-lg text-sm bg-red/20 text-red">
             <strong>Error:</strong> {error}
           </div>
         )}
@@ -334,43 +484,27 @@ export function Chat() {
       </div>
 
       {/* Input */}
-      <div 
-        className="p-4 border-t relative"
-        style={{ borderColor: colors.surface0 }}
-      >
+      <div className="p-4 border-t border-surface0 relative">
         {/* Suggestions dropdown */}
         {showSuggestions && suggestions.length > 0 && (
-          <div 
-            className="absolute bottom-full left-4 right-4 mb-2 rounded-lg overflow-hidden shadow-lg border"
-            style={{ 
-              backgroundColor: colors.surface0,
-              borderColor: colors.surface1,
-              maxHeight: '200px',
-              overflowY: 'auto',
-            }}
-          >
+          <div className="absolute bottom-full left-4 right-4 mb-2 rounded-lg overflow-hidden shadow-lg border bg-surface0 border-surface1 max-h-[200px] overflow-y-auto">
             {suggestions.map((name, index) => (
               <button
                 key={name}
                 onClick={() => completeMention(name)}
-                className="w-full px-3 py-2 text-left text-sm flex items-center gap-2 transition-colors"
-                style={{
-                  backgroundColor: index === selectedSuggestion ? colors.surface1 : 'transparent',
-                  color: colors.text,
-                }}
+                className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 transition-colors text-text ${
+                  index === selectedSuggestion ? 'bg-surface1' : 'bg-transparent'
+                }`}
                 onMouseEnter={() => setSelectedSuggestion(index)}
               >
-                <span style={{ color: colors.mauve }}>@</span>
+                <span className="text-mauve">@</span>
                 <span>{name}</span>
               </button>
             ))}
           </div>
         )}
         
-        <div 
-          className="flex items-end gap-2 rounded-lg p-2"
-          style={{ backgroundColor: colors.surface0 }}
-        >
+        <div className="flex items-end gap-2 rounded-lg p-2 bg-surface0">
           <textarea
             ref={textareaRef}
             value={inputMessage}
@@ -378,19 +512,13 @@ export function Chat() {
             onKeyDown={handleKeyDown}
             placeholder="Ask about your notes... (use @ to mention notes)"
             rows={1}
-            className="flex-1 resize-none bg-transparent outline-none text-sm"
-            style={{ 
-              color: colors.text,
-              minHeight: '24px',
-              maxHeight: '120px',
-            }}
+            className="flex-1 resize-none bg-transparent outline-none text-sm text-text min-h-[24px] max-h-[120px]"
             disabled={isStreaming}
           />
           {isStreaming ? (
             <button
               onClick={handleCancel}
-              className="p-2 rounded-lg transition-colors"
-              style={{ backgroundColor: colors.red, color: colors.crust }}
+              className="p-2 rounded-lg transition-colors bg-red text-crust"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="6" y="6" width="12" height="12" />
@@ -400,11 +528,9 @@ export function Chat() {
             <button
               onClick={handleSend}
               disabled={!inputMessage.trim()}
-              className="p-2 rounded-lg transition-colors disabled:opacity-50"
-              style={{ 
-                backgroundColor: inputMessage.trim() ? colors.mauve : colors.surface1,
-                color: colors.crust,
-              }}
+              className={`p-2 rounded-lg transition-colors disabled:opacity-50 text-crust ${
+                inputMessage.trim() ? 'bg-mauve' : 'bg-surface1'
+              }`}
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M22 2L11 13" />
@@ -413,7 +539,7 @@ export function Chat() {
             </button>
           )}
         </div>
-        <p className="text-xs mt-2" style={{ color: colors.overlay0 }}>
+        <p className="text-xs mt-2 text-overlay0">
           Press Enter to send, Shift+Enter for new line
         </p>
       </div>
@@ -424,35 +550,32 @@ export function Chat() {
 interface MessageBubbleProps {
   message: ChatMessage;
   isStreaming?: boolean;
+  onNoteClick?: (noteName: string) => void;
 }
 
-function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
+function MessageBubble({ message, isStreaming, onNoteClick }: MessageBubbleProps) {
   const isUser = message.role === 'user';
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`max-w-[85%] rounded-lg px-4 py-2.5 ${isStreaming ? 'animate-pulse' : ''}`}
-        style={{
-          backgroundColor: isUser ? colors.mauve : colors.surface0,
-          color: isUser ? colors.crust : colors.text,
-        }}
+        className={`max-w-[85%] rounded-lg px-4 py-2.5 ${isStreaming ? 'animate-pulse' : ''} ${
+          isUser ? 'bg-mauve text-crust' : 'bg-surface0 text-text'
+        }`}
       >
         {/* Tool calls indicator */}
         {message.toolCalls && message.toolCalls.length > 0 && (
-          <div className="mb-2 pb-2 border-b" style={{ borderColor: isUser ? colors.crust : colors.surface1 }}>
-            <span className="text-xs font-medium" style={{ color: isUser ? colors.crust : colors.subtext0 }}>
+          <div className={`mb-2 pb-2 border-b ${isUser ? 'border-crust' : 'border-surface1'}`}>
+            <span className={`text-xs font-medium ${isUser ? 'text-crust' : 'text-subtext0'}`}>
               🔧 Used {message.toolCalls.length} tool{message.toolCalls.length > 1 ? 's' : ''}:
             </span>
             <div className="flex flex-wrap gap-1 mt-1">
               {message.toolCalls.map((tc, index) => (
                 <span 
                   key={tc.id || `tool-${index}`} 
-                  className="text-xs px-1.5 py-0.5 rounded"
-                  style={{ 
-                    backgroundColor: isUser ? `${colors.crust}40` : colors.surface1,
-                    color: isUser ? colors.crust : colors.subtext1,
-                  }}
+                  className={`text-xs px-1.5 py-0.5 rounded ${
+                    isUser ? 'bg-crust/40 text-crust' : 'bg-surface1 text-subtext1'
+                  }`}
                 >
                   {tc.name}
                 </span>
@@ -461,16 +584,21 @@ function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
           </div>
         )}
 
-        {/* Message content */}
-        <div className="text-sm whitespace-pre-wrap break-words">
-          {message.content}
+        {/* Message content with Markdown */}
+        <div className={`text-sm break-words prose prose-sm max-w-none ${
+          isUser 
+            ? 'prose-invert prose-p:text-crust prose-headings:text-crust prose-strong:text-crust prose-code:text-crust prose-li:text-crust' 
+            : 'prose-p:text-text prose-headings:text-text prose-strong:text-text prose-code:text-lavender prose-code:bg-surface1 prose-code:px-1 prose-code:rounded prose-li:text-text prose-a:text-lavender'
+        }`}>
+          {isUser ? (
+            <p className="m-0 whitespace-pre-wrap">{message.content}</p>
+          ) : (
+            <WikiLinkRenderer content={message.content} onNoteClick={onNoteClick} />
+          )}
         </div>
 
         {/* Timestamp */}
-        <div 
-          className="text-xs mt-1.5 opacity-60"
-          style={{ color: isUser ? colors.crust : colors.subtext0 }}
-        >
+        <div className={`text-xs mt-1.5 opacity-60 ${isUser ? 'text-crust' : 'text-subtext0'}`}>
           {formatTime(message.createdAt)}
         </div>
       </div>

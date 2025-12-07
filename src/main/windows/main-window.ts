@@ -1,4 +1,4 @@
-import { BrowserWindow, screen } from 'electron';
+import { BrowserWindow, screen, shell } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -38,8 +38,6 @@ export async function createMainWindow(): Promise<BrowserWindow> {
 
   // Show window when ready
   mainWindow.once('ready-to-show', () => {
-    // Reset zoom - adjust if UI appears too large
-    mainWindow?.webContents.setZoomFactor(0.9);
     mainWindow?.show();
   });
 
@@ -60,7 +58,11 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   // Handle external links
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https:') || url.startsWith('http:')) {
-      require('electron').shell.openExternal(url);
+      shell.openExternal(url);
+      return { action: 'deny' };
+    }
+    // Block note:// URLs from opening new windows (handled in renderer)
+    if (url.startsWith('note://')) {
       return { action: 'deny' };
     }
     return { action: 'allow' };

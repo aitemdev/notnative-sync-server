@@ -50,13 +50,24 @@ export interface ElectronAPI {
     onStreamChunk: (callback: (data: { sessionId: number; chunk: string; fullContent: string }) => void) => () => void;
     onStreamEnd: (callback: (data: { sessionId: number; message: ChatMessage }) => void) => () => void;
     onStreamError: (callback: (data: { sessionId: number; error: string }) => void) => () => void;
+    // Model management
+    getModels: () => Promise<{ chat: ModelInfo[]; embedding: ModelInfo[] }>;
+    getModel: () => Promise<string>;
+    setModel: (model: string) => Promise<{ success: boolean }>;
+    // API key management
+    getApiKey: () => Promise<{ hasKey: boolean; maskedKey: string }>;
+    setApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>;
   };
   
   // Embeddings
   embeddings: {
     search: (query: string, limit?: number) => Promise<SemanticSearchResult[]>;
-    indexNote: (notePath: string) => Promise<void>;
-    reindexAll: () => Promise<void>;
+    indexNote: (notePath: string) => Promise<{ success: boolean; error?: string }>;
+    reindexAll: () => Promise<{ success: boolean; indexed?: number; errors?: number; error?: string }>;
+    getStats: () => Promise<{ totalNotes: number; totalChunks: number; lastUpdated: Date | null }>;
+    delete: (notePath: string) => Promise<{ success: boolean; error?: string }>;
+    getModel: () => Promise<string>;
+    setModel: (model: string) => Promise<{ success: boolean }>;
   };
   
   // Reminders
@@ -117,6 +128,7 @@ import type {
   ChatMessage,
   Reminder,
   SemanticSearchResult,
+  ModelInfo,
 } from '../shared/types';
 
 // Create the API
@@ -186,6 +198,13 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.on(IPC_CHANNELS['ai:stream-error'], subscription);
       return () => ipcRenderer.removeListener(IPC_CHANNELS['ai:stream-error'], subscription);
     },
+    // Model management
+    getModels: () => ipcRenderer.invoke(IPC_CHANNELS['ai:get-models']),
+    getModel: () => ipcRenderer.invoke(IPC_CHANNELS['ai:get-chat-model']),
+    setModel: (model) => ipcRenderer.invoke(IPC_CHANNELS['ai:set-chat-model'], model),
+    // API key management
+    getApiKey: () => ipcRenderer.invoke(IPC_CHANNELS['ai:get-api-key']),
+    setApiKey: (apiKey) => ipcRenderer.invoke(IPC_CHANNELS['ai:set-api-key'], apiKey),
   },
   
   // Embeddings API
@@ -193,6 +212,10 @@ const electronAPI: ElectronAPI = {
     search: (query, limit) => ipcRenderer.invoke(IPC_CHANNELS['embeddings:search'], query, limit),
     indexNote: (notePath) => ipcRenderer.invoke(IPC_CHANNELS['embeddings:index-note'], notePath),
     reindexAll: () => ipcRenderer.invoke(IPC_CHANNELS['embeddings:reindex-all']),
+    getStats: () => ipcRenderer.invoke(IPC_CHANNELS['embeddings:get-stats']),
+    delete: (notePath) => ipcRenderer.invoke(IPC_CHANNELS['embeddings:delete'], notePath),
+    getModel: () => ipcRenderer.invoke(IPC_CHANNELS['embeddings:get-model']),
+    setModel: (model) => ipcRenderer.invoke(IPC_CHANNELS['embeddings:set-model'], model),
   },
   
   // Reminders API

@@ -24,8 +24,11 @@ interface AppState {
   editorMode: EditorMode;
   isModified: boolean;
   
-  // Theme
+  // Theme (legacy - now managed by ThemeProvider)
   theme: Theme;
+  
+  // Settings modal
+  isSettingsOpen: boolean;
   
   // Search
   searchQuery: string;
@@ -54,6 +57,10 @@ interface AppState {
   setIsModified: (modified: boolean) => void;
   
   setTheme: (theme: Theme) => void;
+  
+  // Settings modal
+  setIsSettingsOpen: (open: boolean) => void;
+  toggleSettings: () => void;
   
   setSearchQuery: (query: string) => void;
   setSearchResults: (results: NoteMetadata[]) => void;
@@ -87,6 +94,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   
   theme: 'system',
   
+  // Settings modal
+  isSettingsOpen: false,
+  
   searchQuery: '',
   searchResults: [],
   
@@ -111,6 +121,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   setIsModified: (modified) => set({ isModified: modified }),
   
   setTheme: (theme) => set({ theme }),
+  
+  // Settings modal
+  setIsSettingsOpen: (open) => set({ isSettingsOpen: open }),
+  toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen })),
   
   setSearchQuery: (query) => set({ searchQuery: query }),
   setSearchResults: (results) => set({ searchResults: results }),

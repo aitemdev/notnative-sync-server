@@ -45,11 +45,20 @@ export const IPC_CHANNELS = {
   'ai:get-sessions': 'ai:get-sessions',
   'ai:get-messages': 'ai:get-messages',
   'ai:delete-session': 'ai:delete-session',
+  'ai:get-models': 'ai:get-models',
+  'ai:get-chat-model': 'ai:get-chat-model',
+  'ai:set-chat-model': 'ai:set-chat-model',
+  'ai:get-api-key': 'ai:get-api-key',
+  'ai:set-api-key': 'ai:set-api-key',
 
   // ============== EMBEDDINGS ==============
   'embeddings:search': 'embeddings:search',
   'embeddings:index-note': 'embeddings:index-note',
   'embeddings:reindex-all': 'embeddings:reindex-all',
+  'embeddings:get-stats': 'embeddings:get-stats',
+  'embeddings:delete': 'embeddings:delete',
+  'embeddings:get-model': 'embeddings:get-model',
+  'embeddings:set-model': 'embeddings:set-model',
 
   // ============== REMINDERS ==============
   'reminders:list': 'reminders:list',

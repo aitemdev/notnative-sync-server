@@ -4,7 +4,11 @@ import NotesList from './NotesList';
 import SearchPanel from './SearchPanel';
 import { FileText, Search, Database, MessageSquare } from 'lucide-react';
 
-export default function Sidebar() {
+interface SidebarProps {
+  onClose?: () => void;
+}
+
+export default function Sidebar({ onClose }: SidebarProps) {
   const { sidebarPanel, setSidebarPanel } = useAppStore();
   const [showNewNoteInput, setShowNewNoteInput] = useState(false);
 
@@ -12,29 +16,29 @@ export default function Sidebar() {
     { id: 'notes', icon: FileText, label: 'Notas' },
     { id: 'search', icon: Search, label: 'Buscar' },
     { id: 'bases', icon: Database, label: 'Bases' },
-    { id: 'chat', icon: MessageSquare, label: 'Chat AI' },
+    { id: 'chat', icon: MessageSquare, label: 'Chat' },
   ];
 
   return (
     <div className="flex flex-col h-full bg-mantle">
       {/* Panel tabs */}
-      <div className="flex items-center border-b border-surface0 px-2">
+      <div className="flex items-center justify-center h-10 border-b border-surface0 px-1 overflow-x-auto scrollbar-none">
         {panels.map(({ id, icon: Icon, label }) => (
           <button
             key={id}
             onClick={() => setSidebarPanel(id)}
             className={`
-              flex items-center gap-1.5 px-3 py-2 text-sm
-              transition-colors
+              flex items-center h-full gap-1.5 px-2.5 text-xs whitespace-nowrap
+              transition-colors flex-shrink-0 border-b-2
               ${sidebarPanel === id 
-                ? 'text-lavender border-b-2 border-lavender' 
-                : 'text-subtext0 hover:text-text'
+                ? 'text-lavender border-lavender' 
+                : 'text-subtext0 hover:text-text border-transparent'
               }
             `}
             title={label}
           >
-            <Icon size={16} />
-            <span className="hidden lg:inline">{label}</span>
+            <Icon size={14} className="flex-shrink-0" />
+            <span>{label}</span>
           </button>
         ))}
       </div>
@@ -44,12 +48,12 @@ export default function Sidebar() {
         {sidebarPanel === 'notes' && <NotesList />}
         {sidebarPanel === 'search' && <SearchPanel />}
         {sidebarPanel === 'bases' && (
-          <div className="p-4 text-subtext0 text-sm">
+          <div className="p-3 sm:p-4 text-subtext0 text-xs sm:text-sm">
             Bases de datos (próximamente)
           </div>
         )}
         {sidebarPanel === 'chat' && (
-          <div className="p-4 text-subtext0 text-sm">
+          <div className="p-3 sm:p-4 text-subtext0 text-xs sm:text-sm">
             Chat AI (próximamente)
           </div>
         )}

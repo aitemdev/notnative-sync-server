@@ -6,6 +6,7 @@ import { getAIClient, initAIClient, ChatOptions, ChatMessage as AIMessage } from
 import { createToolContext } from '../ai/context';
 import { createAllTools } from '../ai/tools';
 import type { ChatMessage, ChatSession } from '../../shared/types';
+import { getApiKey } from '../settings/store';
 
 // Store for active stream aborts
 const activeStreams = new Map<number, AbortController>();
@@ -28,13 +29,13 @@ export function registerAIHandlers(
   const toolContext = createToolContext(db, notesDir, getMainWindow);
   const tools = createAllTools(toolContext);
 
-  // Initialize AI client with API key from env (in production, get from settings)
-  const apiKey = process.env.OPENROUTER_API_KEY || '';
+  // Initialize AI client with API key from settings (with env fallback)
+  const apiKey = getApiKey();
   if (apiKey) {
     initAIClient(apiKey);
     console.log('✅ AI Client initialized');
   } else {
-    console.warn('⚠️ OPENROUTER_API_KEY not set - AI features will not work');
+    console.warn('⚠️ No API key configured - AI features will not work until you add one in settings');
   }
 
   // ============== SEND MESSAGE ==============
@@ -51,7 +52,7 @@ export function registerAIHandlers(
 
     const aiClient = getAIClient();
     if (!aiClient) {
-      throw new Error('AI client not initialized. Please set OPENROUTER_API_KEY.');
+      throw new Error('AI client not initialized. Please configure your OpenRouter API key in settings.');
     }
 
     // Create or get session
@@ -100,13 +101,31 @@ You help users manage their notes, search for information, create content, and a
 
 IMPORTANT RULES:
 - ALWAYS respond in the SAME LANGUAGE the user writes to you. If they write in Spanish, respond in Spanish. If they write in English, respond in English.
-- Be concise but helpful.
+- Be thorough and helpful in your responses. When the user asks for information, provide comprehensive answers based on what you find.
 - When the user mentions a note with @notename (e.g., "@test", "@My Note"), the @ symbol is ONLY for reference - the actual note name does NOT include the @. So "@test" means the note named "test", not "@test".
 - When the user asks you to modify, update, or add content to a note, use the update_note tool directly with the new content. Don't just search first.
 - When asked to create a note with specific content, use create_note with full content in one call.
 - When asked to clean/clear a note and add new content, use update_note with the complete new content.
-- Format your responses using Markdown when appropriate.
-- After completing an action, briefly confirm what you did.`,
+- Format your responses using Markdown when appropriate (headers, lists, bold, code blocks, etc.).
+- After completing an action, briefly confirm what you did.
+
+SEARCH TOOLS - TWO-STEP APPROACH:
+1. First use "semantic_search" to find relevant notes about a TOPIC or CONCEPT. This searches by meaning/similarity using AI embeddings.
+2. After finding relevant notes, use "read_note" to read the FULL CONTENT of the most relevant note(s) to get complete information.
+3. Only use "search_notes" for exact keyword matching when semantic search doesn't work.
+
+CRITICAL - ALWAYS FOLLOW THIS WORKFLOW:
+1. When user asks about a topic → Use semantic_search first
+2. Look at the results and identify the most relevant note(s) with highest similarity %
+3. Use read_note to get the COMPLETE content of those notes
+4. Then provide a comprehensive answer based on the full content
+
+WHEN PRESENTING RESULTS:
+- NEVER just show raw search results. ALWAYS read the full notes and synthesize the information.
+- Answer the user's question directly using the information you found.
+- Explain what you found in your own words with specific details from the notes.
+- Always cite sources using [[note name]] format so users can click to open the note.
+- If the user asks "what does my note say about X", READ the note first and EXPLAIN the content.`,
       };
 
       const apiMessages: AIMessage[] = [
@@ -119,7 +138,7 @@ IMPORTANT RULES:
 
       // Stream the response
       let fullContent = '';
-      const toolCallsInfo: Array<{ name: string; args: unknown; result: unknown }> = [];
+      const toolCallsInfo: Array<{ id: string; name: string; args: Record<string, unknown>; result: unknown }> = [];
 
       console.log('🤖 Starting AI stream...');
       
@@ -161,8 +180,9 @@ IMPORTANT RULES:
           console.log('🤖 Tool calls:', calls);
           for (const call of calls || []) {
             toolCallsInfo.push({
+              id: call.toolCallId || `tool-${Date.now()}-${Math.random().toString(36).slice(2)}`,
               name: call.toolName,
-              args: call.args,
+              args: (call.args as Record<string, unknown>) || {},
               result: null,
             });
           }

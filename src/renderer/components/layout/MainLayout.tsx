@@ -1,18 +1,61 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAppStore } from '../../stores/app-store';
 import Sidebar from '../sidebar/Sidebar';
 import Editor from '../editor/Editor';
 import StatusBar from '../common/StatusBar';
 import { Chat } from '../chat/Chat';
 import { useNotes } from '../../hooks/useNotes';
+import { X } from 'lucide-react';
+
+// Breakpoint for responsive behavior
+const MOBILE_BREAKPOINT = 1024;
+const TABLET_BREAKPOINT = 768;
 
 export default function MainLayout() {
-  const { sidebarOpen, sidebarWidth, rightPanelOpen, rightPanelWidth, toggleRightPanel, currentNote, setCurrentNote, setCurrentNoteContent } = useAppStore();
+  const { 
+    sidebarOpen, 
+    sidebarWidth, 
+    rightPanelOpen, 
+    rightPanelWidth, 
+    toggleRightPanel, 
+    toggleSidebar,
+    currentNote, 
+    setCurrentNote, 
+    setCurrentNoteContent 
+  } = useAppStore();
   const { loadNotes, loadFolders, loadTags } = useNotes();
+  
+  // Responsive state
+  const [isMobile, setIsMobile] = useState(false);
+  const [isTablet, setIsTablet] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
   // Use ref to access current note in event listener without re-creating listener
   const currentNoteRef = useRef(currentNote);
   currentNoteRef.current = currentNote;
+
+  // Handle window resize for responsive behavior
+  const handleResize = useCallback(() => {
+    const width = window.innerWidth;
+    setIsMobile(width < TABLET_BREAKPOINT);
+    setIsTablet(width < MOBILE_BREAKPOINT);
+    
+    // Auto-collapse sidebar on smaller screens
+    if (width < MOBILE_BREAKPOINT && !sidebarCollapsed) {
+      setSidebarCollapsed(true);
+    } else if (width >= MOBILE_BREAKPOINT && sidebarCollapsed) {
+      setSidebarCollapsed(false);
+    }
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    // Initial check
+    handleResize();
+    
+    // Add resize listener
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [handleResize]);
 
   useEffect(() => {
     // Load initial data
@@ -62,11 +105,19 @@ export default function MainLayout() {
       loadNotes();
     });
 
-    // Listen for keyboard shortcut to toggle chat
+    // Listen for keyboard shortcuts
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+Shift+C - Toggle chat panel
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'c') {
         e.preventDefault();
         toggleRightPanel();
+      }
+      
+      // Ctrl+, - Open settings
+      if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+        e.preventDefault();
+        const { isSettingsOpen, setIsSettingsOpen } = useAppStore.getState();
+        setIsSettingsOpen(!isSettingsOpen);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -79,33 +130,87 @@ export default function MainLayout() {
     };
   }, [loadNotes, loadFolders, loadTags, toggleRightPanel, setCurrentNote, setCurrentNoteContent]);
 
+  // Calculate responsive widths
+  const effectiveSidebarWidth = isMobile 
+    ? '100%' 
+    : isTablet 
+      ? (sidebarCollapsed ? 0 : 'clamp(200px, 25vw, 280px)')
+      : sidebarWidth;
+      
+  const effectiveChatWidth = isMobile 
+    ? '100%' 
+    : isTablet 
+      ? 'clamp(280px, 35vw, 380px)'
+      : rightPanelWidth;
+
   return (
-    <div className="flex flex-col h-screen bg-base text-text">
+    <div className="flex flex-col h-screen bg-base text-text overflow-hidden">
       {/* Main content area */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Sidebar - Responsive */}
         {sidebarOpen && (
-          <div 
-            className="flex-shrink-0 border-r border-surface0"
-            style={{ width: sidebarWidth }}
-          >
-            <Sidebar />
-          </div>
+          <>
+            {/* Overlay for mobile */}
+            {isMobile && (
+              <div 
+                className="absolute inset-0 bg-black/50 z-20 animate-fade-in"
+                onClick={toggleSidebar}
+              />
+            )}
+            <div 
+              className={`
+                flex-shrink-0 border-r border-surface0 animate-slide-in-left
+                ${isMobile ? 'absolute inset-y-0 left-0 z-30 w-[280px]' : ''}
+              `}
+              style={{ 
+                width: isMobile ? 280 : effectiveSidebarWidth 
+              }}
+            >
+              <Sidebar onClose={isMobile ? toggleSidebar : undefined} />
+            </div>
+          </>
         )}
 
-        {/* Editor area */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Editor area - Takes remaining space */}
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
           <Editor />
         </div>
 
-        {/* Right Panel - Chat */}
+        {/* Right Panel - Chat (Responsive) */}
         {rightPanelOpen && (
-          <div 
-            className="flex-shrink-0 border-l border-surface0"
-            style={{ width: rightPanelWidth }}
-          >
-            <Chat />
-          </div>
+          <>
+            {/* Overlay for mobile/tablet */}
+            {isTablet && (
+              <div 
+                className="absolute inset-0 bg-black/50 z-20 animate-fade-in"
+                onClick={toggleRightPanel}
+              />
+            )}
+            <div 
+              className={`
+                flex-shrink-0 border-l border-surface0 bg-base animate-slide-in-right
+                ${isTablet ? 'absolute inset-y-0 right-0 z-30' : ''}
+              `}
+              style={{ width: effectiveChatWidth }}
+            >
+              <div className="flex flex-col h-full">
+                {/* Close button for mobile/tablet */}
+                {isTablet && (
+                  <div className="flex items-center justify-between px-3 py-2 border-b border-surface0">
+                    <span className="text-sm font-medium">AI Chat</span>
+                    <button 
+                      onClick={toggleRightPanel}
+                      className="p-1 rounded hover:bg-surface0 transition-colors"
+                      aria-label="Close chat"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                )}
+                <Chat />
+              </div>
+            </div>
+          </>
         )}
       </div>
 

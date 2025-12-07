@@ -5,6 +5,7 @@ import { NotesDirectory } from './notes-directory';
 import { NoteFile } from './note-file';
 import { NotesDatabase } from '../database/notes';
 import { TagsDatabase } from '../database/tags';
+import { indexNote as indexEmbeddings, deleteEmbeddings } from '../database/embeddings';
 import { IPC_CHANNELS } from '../../shared/types/ipc';
 import { FILE_WATCH_DEBOUNCE } from '../../shared/constants';
 
@@ -161,6 +162,10 @@ export class NotesWatcher {
     try {
       // Remove from database
       this.notesDb.deleteNoteByPath(filePath);
+      
+      // Remove embeddings
+      deleteEmbeddings(filePath);
+      
       this.notifyRenderer('unlink', filePath);
     } catch (error) {
       console.error(`❌ Error handling deleted note: ${filePath}`, error);
@@ -216,6 +221,24 @@ export class NotesWatcher {
       const tags = this.extractTags(content);
       this.tagsDb.syncNoteTags(metadata.id, tags);
     }
+    
+    // Index embeddings in background (don't await to avoid blocking)
+    this.indexEmbeddingsInBackground(filePath, content);
+  }
+  
+  /**
+   * Index embeddings in background without blocking the main thread
+   */
+  private indexEmbeddingsInBackground(filePath: string, content: string): void {
+    // Use setImmediate to run after current event loop
+    setImmediate(async () => {
+      try {
+        await indexEmbeddings(filePath, content);
+      } catch (error) {
+        // Log but don't fail - embeddings are supplementary
+        console.warn(`⚠️ Failed to index embeddings for ${filePath}:`, error);
+      }
+    });
   }
 
   /**

@@ -152,17 +152,17 @@ export default function Editor() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-base">
       {/* Editor header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-surface0 bg-mantle">
-        <div className="flex items-center gap-2">
-          <span className="text-lg">{currentNote.icon || '📄'}</span>
-          <h1 className="text-lg font-medium text-text">{currentNote.name}</h1>
+      <div className="flex items-center justify-between h-10 px-4 border-b border-surface0 bg-mantle">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-sm flex-shrink-0">{currentNote.icon || '📄'}</span>
+          <h1 className="text-sm font-medium text-text truncate">{currentNote.name}</h1>
           {isModified && (
-            <span className="w-2 h-2 rounded-full bg-yellow" title="Sin guardar" />
+            <span className="w-2 h-2 rounded-full bg-yellow flex-shrink-0" title="Sin guardar" />
           )}
         </div>
-        <div className="flex items-center gap-2 text-sm text-subtext0">
+        <div className="flex items-center gap-2 text-xs text-subtext0 flex-shrink-0">
           {lastSaved && (
-            <span>Guardado: {lastSaved.toLocaleTimeString()}</span>
+            <span className="hidden sm:inline">Guardado: {lastSaved.toLocaleTimeString()}</span>
           )}
           <button
             onClick={() => saveNote()}
@@ -174,7 +174,7 @@ export default function Editor() {
             }`}
             title="Guardar (Ctrl+S)"
           >
-            <Save size={18} />
+            <Save size={16} />
           </button>
         </div>
       </div>

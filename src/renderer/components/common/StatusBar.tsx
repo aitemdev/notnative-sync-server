@@ -10,6 +10,7 @@ export default function StatusBar() {
     toggleSidebar,
     rightPanelOpen,
     toggleRightPanel,
+    setIsSettingsOpen,
   } = useAppStore();
 
   const getModeDisplay = () => {
@@ -32,7 +33,7 @@ export default function StatusBar() {
   const { text: modeText, className: modeClassName } = getModeDisplay();
 
   return (
-    <div className="h-7 flex items-center bg-mantle text-subtext0 text-sm border-t border-surface0 select-none">
+    <div className="h-7 flex items-center bg-mantle text-subtext0 text-xs sm:text-sm border-t border-surface0 select-none">
       {/* Left section */}
       <div className="flex items-center h-full">
         {/* Sidebar toggle */}
@@ -41,12 +42,12 @@ export default function StatusBar() {
           className="h-full px-2 hover:bg-surface0 hover:text-text transition-colors"
           title={sidebarOpen ? 'Ocultar sidebar (Ctrl+B)' : 'Mostrar sidebar (Ctrl+B)'}
         >
-          {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeft size={16} />}
+          {sidebarOpen ? <PanelLeftClose size={14} /> : <PanelLeft size={14} />}
         </button>
 
         {/* Mode indicator */}
         {currentNote && (
-          <div className={`h-full px-3 flex items-center font-bold text-xs ${modeClassName}`}>
+          <div className={`h-full px-2 sm:px-3 flex items-center font-bold text-xs ${modeClassName}`}>
             {modeText}
           </div>
         )}
@@ -57,14 +58,14 @@ export default function StatusBar() {
 
       {/* Right section */}
       <div className="flex items-center h-full">
-        {/* File info */}
-        <span className="px-2">UTF-8</span>
-        <span className="px-2">Markdown</span>
+        {/* File info - hidden on mobile */}
+        <span className="hidden sm:inline px-2">UTF-8</span>
+        <span className="hidden sm:inline px-2">Markdown</span>
         
         {/* Chat toggle */}
         <button
           onClick={toggleRightPanel}
-          className={`h-full px-2 flex items-center gap-1.5 transition-colors ${
+          className={`h-full px-2 flex items-center gap-1 sm:gap-1.5 transition-colors ${
             rightPanelOpen 
               ? 'bg-mauve text-crust' 
               : 'hover:bg-surface0 hover:text-text'
@@ -72,16 +73,16 @@ export default function StatusBar() {
           title={rightPanelOpen ? 'Ocultar chat (Ctrl+Shift+C)' : 'Mostrar chat (Ctrl+Shift+C)'}
         >
           <MessageSquare size={14} />
-          <span className="text-xs">AI</span>
+          <span className="text-xs hidden sm:inline">AI</span>
         </button>
 
         {/* Settings */}
         <button
-          onClick={() => window.electron.app.setSettings({})}
+          onClick={() => setIsSettingsOpen(true)}
           className="h-full px-2 hover:bg-surface0 hover:text-text transition-colors"
-          title="Configuración"
+          title="Configuración (Ctrl+,)"
         >
-          <Settings size={16} />
+          <Settings size={14} />
         </button>
       </div>
     </div>

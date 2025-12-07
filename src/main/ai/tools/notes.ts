@@ -10,7 +10,7 @@ export function createNoteTools(ctx: ToolContext) {
   return {
     // === Search ===
     search_notes: tool({
-      description: 'Search for notes using full-text search (keywords). Returns note names and snippets.',
+      description: 'Search for notes using full-text search (keywords). Returns note names and snippets. Use semantic_search for conceptual/meaning-based search.',
       inputSchema: z.object({
         query: z.string().describe('The search query (keywords)'),
       }),
@@ -19,9 +19,17 @@ export function createNoteTools(ctx: ToolContext) {
         if (results.length === 0) {
           return 'No notes found matching the query.';
         }
-        return results.slice(0, 10).map(r => 
+        
+        const limitedResults = results.slice(0, 10);
+        const formattedResults = limitedResults.map(r => 
           `- **${r.noteName}**: ${r.snippet || 'No preview available'}`
         ).join('\n');
+        
+        // Add sources section
+        const sources = limitedResults.map(r => `- [[${r.noteName}]]`);
+        const uniqueSources = [...new Set(sources)];
+        
+        return `${formattedResults}\n\n---\n**📚 Fuentes encontradas:**\n${uniqueSources.join('\n')}`;
       },
     }),
 
@@ -38,7 +46,7 @@ export function createNoteTools(ctx: ToolContext) {
         }
         try {
           const content = fs.readFileSync(metadata.path, 'utf-8');
-          return `# ${name}\n\n${content}`;
+          return `# ${name}\n\n${content}\n\n---\n**📚 Fuente:** [[${name}]]`;
         } catch (error) {
           return `Error reading note: ${error}`;
         }

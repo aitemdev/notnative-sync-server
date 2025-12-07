@@ -225,6 +225,12 @@ const MIGRATIONS: string[] = [
   `
     ALTER TABLE chat_sessions ADD COLUMN title TEXT;
   `,
+
+  // v11: Add content_hash to embeddings to avoid unnecessary re-indexing
+  `
+    ALTER TABLE note_embeddings ADD COLUMN content_hash TEXT;
+    CREATE INDEX IF NOT EXISTS idx_embeddings_hash ON note_embeddings(note_path, content_hash);
+  `,
 ];
 
 export function runMigrations(db: Database.Database): void {

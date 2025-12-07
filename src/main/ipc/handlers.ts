@@ -7,9 +7,13 @@ import { NoteFile } from '../files/note-file';
 import { NotesDatabase } from '../database/notes';
 import { TagsDatabase } from '../database/tags';
 import { InlinePropertiesDatabase } from '../database/inline-properties';
+import { indexNote, semanticSearch, reindexAllNotes, getIndexingStats, deleteEmbeddings } from '../database/embeddings';
+import { setEmbeddingModel, getEmbeddingModel, setAIModel, getAIModel, getApiKey as getClientApiKey, initAIClient, getAIClient } from '../ai/client';
+import { getAllModels } from '../ai/models';
 import { createQuickNoteWindow, closeQuickNoteWindow } from '../windows/quicknote-window';
 import { getMainWindow } from '../windows/main-window';
-import { APP_NAME, APP_VERSION } from '../../shared/constants';
+import { APP_NAME, APP_VERSION, AI_EMBEDDING_MODEL, AI_DEFAULT_MODEL } from '../../shared/constants';
+import { getApiKey, setApiKey, hasApiKey } from '../settings/store';
 
 export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirectory): void {
   const notesDb = new NotesDatabase(db);
@@ -275,6 +279,130 @@ export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirect
 
   ipcMain.handle(IPC_CHANNELS['files:get-notes-directory'], async () => {
     return notesDir.root;
+  });
+
+  // ============== EMBEDDINGS ==============
+
+  ipcMain.handle(IPC_CHANNELS['embeddings:search'], async (_, query: string, limit?: number) => {
+    try {
+      return await semanticSearch(query, limit);
+    } catch (error) {
+      console.error('Semantic search error:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS['embeddings:index-note'], async (_, notePath: string) => {
+    try {
+      const noteFile = NoteFile.open(notePath);
+      const content = noteFile.read();
+      await indexNote(notePath, content);
+      return { success: true };
+    } catch (error) {
+      console.error('Index note error:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS['embeddings:reindex-all'], async () => {
+    try {
+      // First, clean up embeddings from excluded folders
+      const { deleteEmbeddingsMatching } = await import('../database/embeddings');
+      const deletedHistory = deleteEmbeddingsMatching('/.history/');
+      const deletedTrash = deleteEmbeddingsMatching('/.trash/');
+      if (deletedHistory > 0 || deletedTrash > 0) {
+        console.log(`🧹 Cleaned up ${deletedHistory + deletedTrash} embeddings from excluded folders`);
+      }
+      
+      const result = await reindexAllNotes(notesDir.root);
+      return { success: true, ...result };
+    } catch (error) {
+      console.error('Reindex all error:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS['embeddings:get-stats'], async () => {
+    return getIndexingStats();
+  });
+
+  ipcMain.handle(IPC_CHANNELS['embeddings:delete'], async (_, notePath: string) => {
+    try {
+      deleteEmbeddings(notePath);
+      return { success: true };
+    } catch (error) {
+      console.error('Delete embeddings error:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS['embeddings:get-model'], async () => {
+    return getEmbeddingModel() || AI_EMBEDDING_MODEL;
+  });
+
+  ipcMain.handle(IPC_CHANNELS['embeddings:set-model'], async (_, model: string) => {
+    setEmbeddingModel(model);
+    return { success: true };
+  });
+
+  // ============== AI MODELS ==============
+
+  ipcMain.handle(IPC_CHANNELS['ai:get-models'], async () => {
+    try {
+      // Get API key from settings store (includes env fallback)
+      const apiKey = getApiKey();
+      
+      if (!apiKey) {
+        console.warn('⚠️ No API key available for fetching models');
+        return { chat: [], embedding: [], error: 'No API key configured. Add your OpenRouter API key in settings.' };
+      }
+      
+      console.log('🔍 Fetching models from OpenRouter...');
+      const models = await getAllModels(apiKey);
+      console.log(`✅ Fetched ${models.chat.length} chat models and ${models.embedding.length} embedding models`);
+      
+      return models;
+    } catch (error) {
+      console.error('❌ Failed to fetch models:', error);
+      return { chat: [], embedding: [], error: String(error) };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS['ai:get-chat-model'], async () => {
+    return getAIModel() || AI_DEFAULT_MODEL;
+  });
+
+  ipcMain.handle(IPC_CHANNELS['ai:set-chat-model'], async (_, model: string) => {
+    setAIModel(model);
+    return { success: true };
+  });
+
+  // ============== API KEY ==============
+
+  ipcMain.handle(IPC_CHANNELS['ai:get-api-key'], async () => {
+    const key = getApiKey();
+    // Return masked version for security
+    if (!key) return { hasKey: false, maskedKey: '' };
+    const masked = key.slice(0, 10) + '...' + key.slice(-4);
+    return { hasKey: true, maskedKey: masked };
+  });
+
+  ipcMain.handle(IPC_CHANNELS['ai:set-api-key'], async (_, apiKey: string) => {
+    try {
+      // Save to settings
+      setApiKey(apiKey);
+      
+      // Reinitialize AI client with new key
+      if (apiKey) {
+        initAIClient(apiKey);
+        console.log('✅ AI Client reinitialized with new API key');
+      }
+      
+      return { success: true };
+    } catch (error) {
+      console.error('❌ Failed to set API key:', error);
+      return { success: false, error: String(error) };
+    }
   });
 
   console.log('✅ IPC handlers registered');
