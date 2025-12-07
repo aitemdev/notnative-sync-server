@@ -11,6 +11,7 @@ export interface AppSettings {
   openrouterApiKey?: string;
   chatModel?: string;
   embeddingModel?: string;
+  braveApiKey?: string;
 }
 
 const SETTINGS_FILE = 'settings.json';
@@ -80,4 +81,18 @@ export function setApiKey(apiKey: string): void {
 
 export function hasApiKey(): boolean {
   return !!getApiKey();
+}
+
+export function getBraveApiKey(): string {
+  const saved = getSetting('braveApiKey');
+  if (saved) return saved;
+  return process.env.BRAVE_API_KEY || '';
+}
+
+export function setBraveApiKey(apiKey: string): void {
+  setSetting('braveApiKey', apiKey);
+}
+
+export function hasBraveApiKey(): boolean {
+  return !!getBraveApiKey();
 }

@@ -10,12 +10,14 @@ import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
 import { EditorMode, type VimEditorProps } from '../../lib/editor/types';
 import { notnativeDark, notnativeSyntax } from '../../lib/editor/themes';
+import { useAppStore } from '../../stores/app-store';
 
 export default function VimEditor({ 
   initialContent, 
   onSave, 
   onChange,
   onModeChange,
+  onScroll,
   readOnly = false,
   className = '',
 }: VimEditorProps) {
@@ -29,6 +31,8 @@ export default function VimEditor({
 
   // Define vim ex commands
   const setupVimCommands = useCallback(() => {
+    const { cycleViewMode } = useAppStore.getState();
+    
     // :w - Save
     Vim.defineEx('write', 'w', () => {
       const content = viewRef.current?.state.doc.toString() || '';
@@ -54,6 +58,11 @@ export default function VimEditor({
         console.log('Open note:', filename);
         // Could emit an event to open a note
       }
+    });
+    
+    // :preview / :pre - Toggle preview mode
+    Vim.defineEx('preview', 'pre', () => {
+      cycleViewMode();
     });
   }, [onSave]);
 
@@ -162,6 +171,31 @@ export default function VimEditor({
         '.cm-line': {
           wordBreak: 'break-word',
           overflowWrap: 'anywhere',
+        },
+      }),
+      
+      // Scroll event listener for sync and keyup for mode detection
+      EditorView.domEventHandlers({
+        scroll: (event) => {
+          if (onScroll) {
+            const target = event.target as HTMLElement;
+            onScroll(target.scrollTop, target.scrollHeight, target.clientHeight);
+          }
+          return false;
+        },
+        keyup: (event, view) => {
+          // Check vim mode after key release (especially for ESC)
+          const cm = getCM(view);
+          if (cm) {
+            const vimState = (cm as any).state?.vim;
+            const newMode = mapVimMode(vimState);
+            if (newMode !== lastModeRef.current) {
+              console.log('🎯 Vim mode changed (keyup):', lastModeRef.current, '->', newMode);
+              lastModeRef.current = newMode;
+              onModeChange?.(newMode);
+            }
+          }
+          return false;
         },
       }),
       

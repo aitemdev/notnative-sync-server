@@ -1,10 +1,12 @@
 import { useState, useCallback, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../stores/app-store';
 import { useNotes } from '../../hooks/useNotes';
 import { Search, FileText, X } from 'lucide-react';
 import type { NoteSearchResult } from '../../../shared/types';
 
 export default function SearchPanel() {
+  const { t } = useTranslation();
   const { searchQuery, setSearchQuery } = useAppStore();
   const { searchNotes, openNote } = useNotes();
   const [results, setResults] = useState<NoteSearchResult[]>([]);
@@ -56,7 +58,7 @@ export default function SearchPanel() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Buscar notas..."
+            placeholder={t('search.placeholder')}
             className="w-full pl-8 pr-8 py-1.5 text-sm bg-surface0 border border-surface1 rounded
                        focus:outline-none focus:border-lavender text-text placeholder-subtext0"
           />
@@ -75,7 +77,7 @@ export default function SearchPanel() {
       <div className="flex-1 overflow-y-auto">
         {isSearching ? (
           <div className="px-4 py-8 text-center text-subtext0 text-sm">
-            Buscando...
+            {t('search.searching')}
           </div>
         ) : results.length > 0 ? (
           <div className="py-1">
@@ -101,12 +103,12 @@ export default function SearchPanel() {
         ) : searchQuery ? (
           <div className="px-4 py-8 text-center text-subtext0 text-sm">
             <Search size={32} className="mx-auto mb-2 opacity-50" />
-            <p>No se encontraron resultados</p>
+            <p>{t('search.noResults')}</p>
           </div>
         ) : (
           <div className="px-4 py-8 text-center text-subtext0 text-sm">
             <Search size={32} className="mx-auto mb-2 opacity-50" />
-            <p>Escribe para buscar</p>
+            <p>{t('search.typeToSearch')}</p>
           </div>
         )}
       </div>
@@ -114,7 +116,7 @@ export default function SearchPanel() {
       {/* Search tips */}
       {!searchQuery && (
         <div className="px-3 py-2 border-t border-surface0 text-xs text-subtext0">
-          <p>Tip: Usa <kbd className="px-1 py-0.5 bg-surface0 rounded">Ctrl+P</kbd> para búsqueda rápida</p>
+          <p>{t('search.tip')} <kbd className="px-1 py-0.5 bg-surface0 rounded">Ctrl+P</kbd> {t('search.quickSearch')}</p>
         </div>
       )}
     </div>

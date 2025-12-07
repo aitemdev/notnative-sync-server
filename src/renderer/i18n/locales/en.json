@@ -1,0 +1,169 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "close": "Close",
+    "search": "Search",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "confirm": "Confirm",
+    "yes": "Yes",
+    "no": "No",
+    "change": "Change",
+    "refresh": "Refresh",
+    "comingSoon": "Coming soon"
+  },
+  "editor": {
+    "noNoteSelected": "No note selected",
+    "selectOrCreate": "Select a note from the sidebar or create a new one",
+    "unsaved": "Unsaved",
+    "saved": "Saved",
+    "editMode": "Edit mode",
+    "previewMode": "Preview mode",
+    "splitMode": "Split view",
+    "toggleView": "Toggle view"
+  },
+  "sidebar": {
+    "panels": {
+      "notes": "Notes",
+      "search": "Search",
+      "bases": "Bases",
+      "chat": "Chat"
+    },
+    "basesComingSoon": "Databases (coming soon)",
+    "chatComingSoon": "AI Chat (coming soon)",
+    "keyboardNav": "Keyboard navigation active (ESC to exit)"
+  },
+  "notesList": {
+    "title": "Notes",
+    "newNote": "New note",
+    "newNoteInFolder": "New note in this folder",
+    "newNoteHere": "New note here",
+    "newFolder": "New folder",
+    "newSubfolder": "New subfolder",
+    "deleteFolder": "Delete folder \"{{folder}}\" and all its contents?",
+    "deleteNote": "Delete \"{{note}}\"?",
+    "untitled": "Untitled",
+    "emptyFolder": "Empty folder",
+    "noNotes": "No notes",
+    "createFirst": "Create first note",
+    "dropToRoot": "Drop here to move to root",
+    "folderNamePlaceholder": "Folder name...",
+    "noteNamePlaceholder": "Note name...",
+    "inFolder": "In: {{folder}}",
+    "open": "Open",
+    "delete": "Delete",
+    "confirmDeleteNote": "Delete \"{{name}}\"?",
+    "deleteThisFolder": "Delete folder"
+  },
+  "search": {
+    "placeholder": "Search notes...",
+    "searching": "Searching...",
+    "noResults": "No results found",
+    "typeToSearch": "Type to search",
+    "tip": "Tip: Use",
+    "quickSearch": "for quick search"
+  },
+  "statusBar": {
+    "hideSidebar": "Hide sidebar",
+    "showSidebar": "Show sidebar",
+    "hideChat": "Hide chat",
+    "showChat": "Show chat",
+    "settings": "Settings"
+  },
+  "editorModes": {
+    "normal": "NORMAL",
+    "insert": "INSERT",
+    "visual": "VISUAL",
+    "command": "COMMAND",
+    "search": "SEARCH"
+  },
+  "settings": {
+    "title": "Settings",
+    "tabs": {
+      "appearance": "Appearance",
+      "ai": "AI & Search",
+      "editor": "Editor",
+      "language": "Language",
+      "about": "About"
+    },
+    "appearance": {
+      "theme": "Theme",
+      "customThemes": "Custom themes",
+      "importTheme": "Import theme",
+      "importThemeDesc": "Import a JSON file with the NotNative color scheme.",
+      "currentThemeColors": "Current theme colors",
+      "deleteTheme": "Delete theme",
+      "system": "System",
+      "followSystem": "Follow system theme"
+    },
+    "editor": {
+      "typography": "Typography",
+      "typographyDesc": "Typography settings (coming soon)",
+      "layout": "Layout",
+      "layoutDesc": "Layout settings (coming soon)"
+    },
+    "ai": {
+      "apiKey": "OpenRouter API Key",
+      "apiKeyDesc": "Configure your OpenRouter API key to use AI models.",
+      "apiKeyPlaceholder": "sk-or-v1-...",
+      "apiKeySaved": "API key saved successfully",
+      "apiKeyLocal": "Your API key is saved locally and never shared.",
+      "braveKey": "Brave Search API Key",
+      "braveKeyDesc": "Optional: add a Brave Search API key for higher quality web search results.",
+      "braveKeyPlaceholder": "brv-...",
+      "braveKeyLocal": "The Brave key stays on this device and is only used for web search.",
+      "apiKeyError": "Make sure you have a valid OpenRouter API key configured.",
+      "chatModel": "AI Chat Model",
+      "chatModelDesc": "Select the language model for the chat assistant.",
+      "chatModelUpdated": "Chat model updated",
+      "embeddingModel": "Embedding Model",
+      "embeddingModelDesc": "Select the model for generating note embeddings. You need to re-index all notes after changing the model.",
+      "embeddingModelWarning": "You changed the model. Re-index all notes to use the new model.",
+      "indexing": "Note Indexing",
+      "indexedNotes": "Indexed notes",
+      "totalChunks": "Total chunks",
+      "lastUpdated": "Last updated",
+      "reindex": "Re-index all notes",
+      "reindexing": "Re-indexing...",
+      "reindexSuccess": "Indexed {{count}} notes",
+      "reindexErrors": "{{count}} errors",
+      "indexingHelp": "Notes are automatically indexed when created or modified. Use this button to re-index all existing notes.",
+      "refreshModels": "Refresh model list",
+      "refreshModelsDesc": "Available models are fetched from the OpenRouter API.",
+      "loadingModels": "Loading models...",
+      "noModelsAvailable": "No models available",
+      "loadingModelsError": "Error loading models from OpenRouter",
+      "saving": "Saving...",
+      "current": "current"
+    },
+    "language": {
+      "title": "Application language",
+      "description": "Select the user interface language.",
+      "spanish": "Español",
+      "english": "English"
+    },
+    "about": {
+      "description": "A note-taking app with Vim editor, integrated AI, and database support.",
+      "builtWith": "Built with Electron, React, CodeMirror, and Tailwind CSS.",
+      "baseTheme": "Base theme: Catppuccin"
+    }
+  },
+  "chat": {
+    "title": "AI Assistant",
+    "session": "Session #{{id}}",
+    "newChat": "New Chat",
+    "startConversation": "Start a conversation",
+    "startConversationDesc": "Ask me to search, create, or modify your notes. I can help you organize your knowledge base.",
+    "placeholder": "Ask about your notes... (use @ to mention notes)",
+    "sendHint": "Press Enter to send, Shift+Enter for new line",
+    "you": "You",
+    "thinking": "Thinking..."
+  },
+  "theme": {
+    "dark": "Dark",
+    "light": "Light"
+  }
+}

@@ -4,6 +4,7 @@ import { EditorMode } from '../lib/editor/types';
 
 export type SidebarPanel = 'notes' | 'bases' | 'search' | 'chat';
 export type Theme = 'light' | 'dark' | 'system';
+export type ViewMode = 'edit' | 'preview' | 'split';
 
 // Re-export EditorMode for convenience
 export { EditorMode };
@@ -13,6 +14,9 @@ interface AppState {
   sidebarPanel: SidebarPanel;
   sidebarOpen: boolean;
   sidebarWidth: number;
+  sidebarNavActive: boolean;
+  sidebarNavSelectedIndex: number;
+  quickNoteOpen: boolean;
   
   // Right Panel (Chat)
   rightPanelOpen: boolean;
@@ -22,6 +26,7 @@ interface AppState {
   currentNote: NoteMetadata | null;
   currentNoteContent: string;
   editorMode: EditorMode;
+  viewMode: ViewMode;
   isModified: boolean;
   
   // Theme (legacy - now managed by ThemeProvider)
@@ -47,6 +52,10 @@ interface AppState {
   setSidebarPanel: (panel: SidebarPanel) => void;
   toggleSidebar: () => void;
   setSidebarWidth: (width: number) => void;
+  setSidebarNavActive: (active: boolean) => void;
+  setSidebarNavSelectedIndex: (index: number) => void;
+  toggleSidebarNav: () => void;
+  setQuickNoteOpen: (open: boolean) => void;
   
   toggleRightPanel: () => void;
   setRightPanelWidth: (width: number) => void;
@@ -54,6 +63,8 @@ interface AppState {
   setCurrentNote: (note: NoteMetadata | null) => void;
   setCurrentNoteContent: (content: string) => void;
   setEditorMode: (mode: EditorMode) => void;
+  setViewMode: (mode: ViewMode) => void;
+  cycleViewMode: () => void;
   setIsModified: (modified: boolean) => void;
   
   setTheme: (theme: Theme) => void;
@@ -83,6 +94,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   sidebarPanel: 'notes',
   sidebarOpen: true,
   sidebarWidth: 280,
+  sidebarNavActive: false,
+  sidebarNavSelectedIndex: -1,
+  quickNoteOpen: false,
   
   rightPanelOpen: false,
   rightPanelWidth: 400,
@@ -90,6 +104,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentNote: null,
   currentNoteContent: '',
   editorMode: EditorMode.Normal,
+  viewMode: (localStorage.getItem('notnative-viewMode') as ViewMode) || 'edit',
   isModified: false,
   
   theme: 'system',
@@ -109,8 +124,29 @@ export const useAppStore = create<AppState>((set, get) => ({
   
   // Actions
   setSidebarPanel: (panel) => set({ sidebarPanel: panel }),
-  toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+  toggleSidebar: () => set((state) => {
+    const newSidebarOpen = !state.sidebarOpen;
+    console.log('toggleSidebar called, current:', state.sidebarOpen, '-> new:', newSidebarOpen);
+    // If closing sidebar, also deactivate nav
+    if (!newSidebarOpen) {
+      return { sidebarOpen: false, sidebarNavActive: false, sidebarNavSelectedIndex: -1 };
+    }
+    return { sidebarOpen: true };
+  }),
   setSidebarWidth: (width) => set({ sidebarWidth: Math.max(200, Math.min(500, width)) }),
+  setSidebarNavActive: (active) => {
+    console.log('setSidebarNavActive called with:', active, new Error().stack);
+    set({ sidebarNavActive: active });
+  },
+  setSidebarNavSelectedIndex: (index) => set({ sidebarNavSelectedIndex: index }),
+  toggleSidebarNav: () => set((state) => {
+    // If activating, also open sidebar
+    if (!state.sidebarNavActive && !state.sidebarOpen) {
+      return { sidebarNavActive: true, sidebarOpen: true };
+    }
+    return { sidebarNavActive: !state.sidebarNavActive };
+  }),
+  setQuickNoteOpen: (open) => set({ quickNoteOpen: open }),
   
   toggleRightPanel: () => set((state) => ({ rightPanelOpen: !state.rightPanelOpen })),
   setRightPanelWidth: (width) => set({ rightPanelWidth: Math.max(300, Math.min(600, width)) }),
@@ -118,6 +154,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   setCurrentNote: (note) => set({ currentNote: note, isModified: false }),
   setCurrentNoteContent: (content) => set({ currentNoteContent: content }),
   setEditorMode: (mode) => set({ editorMode: mode }),
+  setViewMode: (mode) => {
+    localStorage.setItem('notnative-viewMode', mode);
+    set({ viewMode: mode });
+  },
+  cycleViewMode: () => {
+    const current = get().viewMode;
+    const next = current === 'edit' ? 'preview' : current === 'preview' ? 'split' : 'edit';
+    localStorage.setItem('notnative-viewMode', next);
+    set({ viewMode: next });
+  },
   setIsModified: (modified) => set({ isModified: modified }),
   
   setTheme: (theme) => set({ theme }),

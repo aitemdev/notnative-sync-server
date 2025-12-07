@@ -1,12 +1,15 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../stores/app-store';
 import { useNotes } from '../../hooks/useNotes';
 import { EDITOR_AUTOSAVE_DELAY } from '../../../shared/constants';
-import { FileText, Save } from 'lucide-react';
+import { FileText, Save, Code, Eye, Columns2 } from 'lucide-react';
 import VimEditor from './VimEditor';
+import MarkdownPreview from './MarkdownPreview';
 import { EditorMode } from '../../lib/editor/types';
 
 export default function Editor() {
+  const { t } = useTranslation();
   const { 
     currentNote, 
     currentNoteContent, 
@@ -15,11 +18,25 @@ export default function Editor() {
     setIsModified,
     editorMode,
     setEditorMode,
+    viewMode,
+    setViewMode,
+    cycleViewMode,
+    sidebarOpen,
+    toggleSidebar,
+    sidebarNavActive,
+    toggleSidebarNav,
+    toggleRightPanel,
+    setQuickNoteOpen,
   } = useAppStore();
   const { updateNoteById } = useNotes();
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
+  
+  // Refs for scroll sync
+  const previewRef = useRef<HTMLDivElement>(null);
+  const editorScrollRef = useRef<{ scrollTop: number; scrollHeight: number; clientHeight: number } | null>(null);
+  const isScrollSyncing = useRef(false);
   
   // Refs to access current values in cleanup effects
   const currentNoteRef = useRef(currentNote);
@@ -134,6 +151,126 @@ export default function Editor() {
     setEditorMode(mode);
   }, [setEditorMode]);
 
+  // Handle scroll sync from editor to preview (throttled)
+  const lastScrollSync = useRef<number>(0);
+  const handleEditorScroll = useCallback((scrollTop: number, scrollHeight: number, clientHeight: number) => {
+    if (viewMode !== 'split' || isScrollSyncing.current) return;
+    
+    const now = Date.now();
+    if (now - lastScrollSync.current < 100) return; // Throttle 100ms
+    lastScrollSync.current = now;
+    
+    editorScrollRef.current = { scrollTop, scrollHeight, clientHeight };
+    
+    if (previewRef.current) {
+      const scrollPercentage = scrollTop / Math.max(1, scrollHeight - clientHeight);
+      const previewScrollHeight = previewRef.current.scrollHeight - previewRef.current.clientHeight;
+      
+      isScrollSyncing.current = true;
+      previewRef.current.scrollTop = scrollPercentage * previewScrollHeight;
+      requestAnimationFrame(() => {
+        isScrollSyncing.current = false;
+      });
+    }
+  }, [viewMode]);
+
+  // Ctrl+E keyboard shortcut
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 'e' && !e.shiftKey && !e.altKey) {
+        // Don't trigger if in an input/textarea (except our editor)
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+        
+        e.preventDefault();
+        e.stopPropagation();
+        cycleViewMode();
+      }
+    };
+    
+    // Use capture phase to intercept before CodeMirror/Vim
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [cycleViewMode]);
+
+  // Ctrl+T keyboard shortcut - Open sidebar navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 't' && !e.shiftKey && !e.altKey) {
+        // Don't trigger if in an input/textarea
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+        
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // Read current state directly from store
+        const state = useAppStore.getState();
+        
+        // Abrir sidebar si está cerrado y activar navegación
+        if (!state.sidebarOpen) {
+          useAppStore.setState({ sidebarOpen: true });
+        }
+        state.setSidebarNavActive(true);
+      }
+    };
+    
+    // Use capture phase to intercept before other handlers
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, []);
+
+  // ESC closes sidebar even if navigation was deactivated (e.g., after Enter on a note)
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.ctrlKey || e.altKey || e.metaKey) return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+      const state = useAppStore.getState();
+      if (state.sidebarOpen || state.rightPanelOpen) {
+        e.preventDefault();
+        e.stopPropagation();
+        useAppStore.setState({ sidebarOpen: false, sidebarNavActive: false, sidebarNavSelectedIndex: -1, rightPanelOpen: false });
+        const editorEl = document.querySelector('.cm-content') as HTMLElement;
+        if (editorEl) editorEl.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleEsc, true);
+    return () => window.removeEventListener('keydown', handleEsc, true);
+  }, []);
+
+  // Ctrl+Shift+C toggles AI chat panel
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === 'c' && e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey) {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+        e.preventDefault();
+        e.stopPropagation();
+        toggleRightPanel();
+      }
+    };
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [toggleRightPanel]);
+
+  // Ctrl+Shift+N opens quick note modal
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === 'n' && e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey) {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+        e.preventDefault();
+        e.stopPropagation();
+        setQuickNoteOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [setQuickNoteOpen]);
+
   // Empty state
   if (!currentNote) {
     return (
@@ -141,8 +278,8 @@ export default function Editor() {
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center text-subtext0">
             <FileText size={64} className="mx-auto mb-4 opacity-30" />
-            <h2 className="text-xl font-medium mb-2">No hay nota seleccionada</h2>
-            <p className="text-sm">Selecciona una nota de la barra lateral o crea una nueva</p>
+            <h2 className="text-xl font-medium mb-2">{t('editor.noNoteSelected')}</h2>
+            <p className="text-sm">{t('editor.selectOrCreate')}</p>
           </div>
         </div>
       </div>
@@ -157,13 +294,51 @@ export default function Editor() {
           <span className="text-sm flex-shrink-0">{currentNote.icon || '📄'}</span>
           <h1 className="text-sm font-medium text-text truncate">{currentNote.name}</h1>
           {isModified && (
-            <span className="w-2 h-2 rounded-full bg-yellow flex-shrink-0" title="Sin guardar" />
+            <span className="w-2 h-2 rounded-full bg-yellow flex-shrink-0" title={t('editor.unsaved')} />
           )}
         </div>
         <div className="flex items-center gap-2 text-xs text-subtext0 flex-shrink-0">
           {lastSaved && (
-            <span className="hidden sm:inline">Guardado: {lastSaved.toLocaleTimeString()}</span>
+            <span className="hidden sm:inline">{t('editor.saved')}: {lastSaved.toLocaleTimeString()}</span>
           )}
+          
+          {/* View mode toggle buttons */}
+          <div className="flex items-center border border-surface1 rounded overflow-hidden">
+            <button
+              onClick={() => setViewMode('edit')}
+              className={`p-1.5 transition-colors ${
+                viewMode === 'edit' 
+                  ? 'bg-lavender text-crust' 
+                  : 'hover:bg-surface0 text-subtext0 hover:text-text'
+              }`}
+              title={`${t('editor.editMode')} (Ctrl+E)`}
+            >
+              <Code size={14} />
+            </button>
+            <button
+              onClick={() => setViewMode('split')}
+              className={`p-1.5 transition-colors border-x border-surface1 ${
+                viewMode === 'split' 
+                  ? 'bg-lavender text-crust' 
+                  : 'hover:bg-surface0 text-subtext0 hover:text-text'
+              }`}
+              title={`${t('editor.splitMode')} (Ctrl+E)`}
+            >
+              <Columns2 size={14} />
+            </button>
+            <button
+              onClick={() => setViewMode('preview')}
+              className={`p-1.5 transition-colors ${
+                viewMode === 'preview' 
+                  ? 'bg-lavender text-crust' 
+                  : 'hover:bg-surface0 text-subtext0 hover:text-text'
+              }`}
+              title={`${t('editor.previewMode')} (Ctrl+E)`}
+            >
+              <Eye size={14} />
+            </button>
+          </div>
+          
           <button
             onClick={() => saveNote()}
             disabled={!isModified}
@@ -172,21 +347,38 @@ export default function Editor() {
                 ? 'hover:bg-surface0 text-lavender' 
                 : 'text-subtext0 opacity-50 cursor-not-allowed'
             }`}
-            title="Guardar (Ctrl+S)"
+            title={`${t('common.save')} (Ctrl+S)`}
           >
             <Save size={16} />
           </button>
         </div>
       </div>
 
-      {/* VimEditor */}
-      <div className="flex-1 overflow-hidden">
-        <VimEditor
-          initialContent={currentNoteContent}
-          onSave={saveNote}
-          onChange={handleContentChange}
-          onModeChange={handleModeChange}
-        />
+      {/* Editor / Preview area */}
+      <div className="flex-1 overflow-hidden flex">
+        {/* VimEditor - show in edit and split modes */}
+        {(viewMode === 'edit' || viewMode === 'split') && (
+          <div className={`overflow-hidden ${viewMode === 'split' ? 'w-1/2 border-r border-surface0' : 'flex-1'}`}>
+            <VimEditor
+              initialContent={currentNoteContent}
+              onSave={saveNote}
+              onChange={handleContentChange}
+              onModeChange={handleModeChange}
+              onScroll={handleEditorScroll}
+            />
+          </div>
+        )}
+        
+        {/* MarkdownPreview - show in preview and split modes */}
+        {(viewMode === 'preview' || viewMode === 'split') && (
+          <div className={`overflow-hidden ${viewMode === 'split' ? 'w-1/2' : 'flex-1'}`}>
+            <MarkdownPreview 
+              key={currentNote?.id}
+              ref={previewRef}
+              content={currentNoteContent} 
+            />
+          </div>
+        )}
       </div>
     </div>
   );

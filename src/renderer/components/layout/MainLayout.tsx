@@ -4,6 +4,7 @@ import Sidebar from '../sidebar/Sidebar';
 import Editor from '../editor/Editor';
 import StatusBar from '../common/StatusBar';
 import { Chat } from '../chat/Chat';
+import QuickNoteModal from '../common/QuickNoteModal';
 import { useNotes } from '../../hooks/useNotes';
 import { X } from 'lucide-react';
 
@@ -37,8 +38,11 @@ export default function MainLayout() {
   // Handle window resize for responsive behavior
   const handleResize = useCallback(() => {
     const width = window.innerWidth;
-    setIsMobile(width < TABLET_BREAKPOINT);
-    setIsTablet(width < MOBILE_BREAKPOINT);
+    const newIsMobile = width < TABLET_BREAKPOINT;
+    const newIsTablet = width < MOBILE_BREAKPOINT;
+    console.log('Resize:', { width, isMobile: newIsMobile, isTablet: newIsTablet });
+    setIsMobile(newIsMobile);
+    setIsTablet(newIsTablet);
     
     // Auto-collapse sidebar on smaller screens
     if (width < MOBILE_BREAKPOINT && !sidebarCollapsed) {
@@ -146,27 +150,27 @@ export default function MainLayout() {
   return (
     <div className="flex flex-col h-screen bg-base text-text overflow-hidden">
       {/* Main content area */}
-      <div className="flex flex-1 overflow-hidden relative">
+      <div className={`flex flex-1 relative ${isTablet ? '' : 'overflow-hidden'}`}>
         {/* Sidebar - Responsive */}
         {sidebarOpen && (
           <>
-            {/* Overlay for mobile */}
-            {isMobile && (
+            {/* Overlay for mobile/tablet */}
+            {isTablet && (
               <div 
-                className="absolute inset-0 bg-black/50 z-20 animate-fade-in"
+                className="fixed inset-0 bg-black/50 z-40 animate-fade-in"
                 onClick={toggleSidebar}
               />
             )}
             <div 
               className={`
-                flex-shrink-0 border-r border-surface0 animate-slide-in-left
-                ${isMobile ? 'absolute inset-y-0 left-0 z-30 w-[280px]' : ''}
+                flex-shrink-0 border-r border-surface0 animate-slide-in-left bg-base
+                ${isTablet ? 'fixed inset-y-0 left-0 z-50 w-[280px]' : ''}
               `}
               style={{ 
-                width: isMobile ? 280 : effectiveSidebarWidth 
+                width: isTablet ? 280 : effectiveSidebarWidth 
               }}
             >
-              <Sidebar onClose={isMobile ? toggleSidebar : undefined} />
+              <Sidebar onClose={isTablet ? toggleSidebar : undefined} />
             </div>
           </>
         )}
@@ -216,6 +220,7 @@ export default function MainLayout() {
 
       {/* Status bar */}
       <StatusBar />
+      <QuickNoteModal />
     </div>
   );
 }

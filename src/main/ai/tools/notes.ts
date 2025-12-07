@@ -6,6 +6,14 @@ import type { ToolContext } from '../context';
 import { NoteFile } from '../../files/note-file';
 import { IPC_CHANNELS } from '../../../shared/types/ipc';
 
+function normalizeFolderPath(folderPath: string): string | null {
+  const trimmed = folderPath.trim();
+  if (!trimmed) return '';
+  const normalized = path.normalize(trimmed).replace(/\\/g, '/');
+  if (path.isAbsolute(trimmed) || normalized.startsWith('..')) return null;
+  return normalized.replace(/^\.\//, '').replace(/\/+$/, '');
+}
+
 export function createNoteTools(ctx: ToolContext) {
   return {
     // === Search ===
@@ -188,6 +196,47 @@ export function createNoteTools(ctx: ToolContext) {
           return `✅ Content appended to '${name}'.`;
         } catch (error) {
           return `Error appending to note: ${error}`;
+        }
+      },
+    }),
+
+    move_note: tool({
+      description: 'Move a note to a different folder (keeps the same name)',
+      inputSchema: z.object({
+        name: z.string().describe('Name of the note to move'),
+        targetFolder: z.string().describe('Destination folder path; use empty string to move to root'),
+      }),
+      execute: async ({ name, targetFolder }: { name: string; targetFolder: string }) => {
+        const metadata = ctx.notesDb.getNoteByName(name);
+        if (!metadata) {
+          return `Note '${name}' not found.`;
+        }
+
+        const safeFolder = normalizeFolderPath(targetFolder);
+        if (safeFolder === null) {
+          return `Error moving note: destination '${targetFolder}' is not allowed (must stay inside notes root).`;
+        }
+
+        // Prevent collisions in destination
+        const targetFileName = `${name}.md`;
+        const destinationPath = safeFolder
+          ? ctx.notesDir.resolve(path.join(safeFolder, targetFileName))
+          : ctx.notesDir.resolve(targetFileName);
+
+        if (fs.existsSync(destinationPath)) {
+          return `A note named '${name}' already exists in '${safeFolder || 'root'}'. Choose another name or folder.`;
+        }
+
+        try {
+          const noteFile = NoteFile.open(metadata.path);
+          noteFile.move(safeFolder, ctx.notesDir);
+
+          ctx.notesDb.updateNote(metadata.id, { path: noteFile.path, folder: safeFolder || null });
+          ctx.notesDb.touchNote(metadata.id);
+
+          return `✅ Note '${name}' moved to '${safeFolder || 'root'}'.`;
+        } catch (error) {
+          return `Error moving note: ${error}`;
         }
       },
     }),

@@ -4,6 +4,7 @@ import { createTagTools } from './tags';
 import { createFolderTools } from './folders';
 import { createSystemTools } from './system';
 import { createEmbeddingTools } from './embeddings';
+import { createWebTools } from './web';
 
 export function createAllTools(ctx: ToolContext) {
   return {
@@ -12,6 +13,7 @@ export function createAllTools(ctx: ToolContext) {
     ...createFolderTools(ctx),
     ...createSystemTools(ctx),
     ...createEmbeddingTools(ctx),
+    ...createWebTools(),
   };
 }
 
@@ -20,3 +22,4 @@ export { createTagTools } from './tags';
 export { createFolderTools } from './folders';
 export { createSystemTools } from './system';
 export { createEmbeddingTools } from './embeddings';
+export { createWebTools } from './web';

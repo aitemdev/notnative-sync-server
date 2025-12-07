@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState, ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useChatStore } from '../../stores/chat-store';
@@ -165,6 +166,7 @@ function WikiLinkRenderer({ content, onNoteClick }: { content: string; onNoteCli
 }
 
 export function Chat() {
+  const { t } = useTranslation();
   const {
     messages,
     currentSession,
@@ -186,35 +188,58 @@ export function Chat() {
   const [error, setError] = useState<string | null>(null);
   
   // Note autocomplete state
-  const { notes, setCurrentNote, setCurrentNoteContent } = useAppStore();
+  const { notes, setCurrentNote, setCurrentNoteContent, rightPanelOpen } = useAppStore();
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<Array<{ id: number; name: string; folder: string | null }>>([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [mentionStart, setMentionStart] = useState(-1);
+
+  // Focus chat input when the right panel (chat) opens
+  useEffect(() => {
+    if (rightPanelOpen) {
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 0);
+    }
+  }, [rightPanelOpen]);
 
   // Handle clicking on a note link in chat messages
   const handleNoteClick = useCallback(async (noteName: string) => {
     console.log('🔍 Looking for note:', noteName);
-    console.log('📚 Available notes:', notes.map(n => n.name));
-    
-    // Find the note by name (exact match first)
-    let note = notes.find(n => n.name === noteName);
-    
-    if (!note) {
-      // Try to find by partial match
-      note = notes.find(n => 
-        n.name.toLowerCase().includes(noteName.toLowerCase()) ||
-        noteName.toLowerCase().includes(n.name.toLowerCase())
-      );
+    console.log('📚 Available notes:', notes.map(n => `${n.id}:${n.folder ?? 'root'}/${n.name}`));
+
+    const normalized = noteName.trim();
+    const hasFolder = normalized.includes('/');
+
+    let note: typeof notes[number] | undefined;
+
+    if (hasFolder) {
+      // Try to match folder/name exactly
+      note = notes.find(n => {
+        const candidate = n.folder ? `${n.folder}/${n.name}` : n.name;
+        return candidate === normalized;
+      });
     }
-    
+
+    if (!note) {
+      // Exact name match (no folder)
+      note = notes.find(n => n.name === normalized);
+    }
+
+    if (!note) {
+      // Partial fallback
+      const lower = normalized.toLowerCase();
+      note = notes.find(n => {
+        const candidate = n.folder ? `${n.folder}/${n.name}` : n.name;
+        return candidate.toLowerCase().includes(lower) || lower.includes(candidate.toLowerCase());
+      });
+    }
+
     if (note) {
-      console.log('✅ Found note:', note.name, note.path);
-      // Set the note first
+      console.log('✅ Found note:', note.id, note.name, note.path);
       setCurrentNote(note);
-      // Then load and set the content
       try {
-        const fullNote = await window.electron.notes.read(note.name);
+        const fullNote = await window.electron.notes.readById(note.id);
         if (fullNote && fullNote.content) {
           console.log('📄 Loaded content length:', fullNote.content.length);
           setCurrentNoteContent(fullNote.content);
@@ -301,13 +326,24 @@ export function Chat() {
 
     setIsStreaming(true);
 
+    // Keep focus in the input after sending
+    setTimeout(() => textareaRef.current?.focus(), 0);
+
     try {
       await window.electron.ai.sendMessage(currentSession?.id ?? null, message);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send message');
       setIsStreaming(false);
+      setTimeout(() => textareaRef.current?.focus(), 0);
     }
   }, [inputMessage, isStreaming, currentSession]);
+
+  // When streaming ends, return focus to the input so the user can keep typing
+  useEffect(() => {
+    if (!isStreaming) {
+      setTimeout(() => textareaRef.current?.focus(), 0);
+    }
+  }, [isStreaming]);
 
   // Handle input change for @ mentions
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -325,9 +361,9 @@ export function Chat() {
       if (charBefore === ' ' || charBefore === '\n' || atIndex === 0) {
         const query = textBeforeCursor.slice(atIndex + 1).toLowerCase();
         const matches = notes
-          .map(n => n.name)
-          .filter(name => name.toLowerCase().includes(query))
-          .slice(0, 8);
+          .filter(n => n.name.toLowerCase().includes(query))
+          .slice(0, 8)
+          .map(n => ({ id: n.id, name: n.name, folder: n.folder ?? null }));
         
         if (matches.length > 0) {
           setSuggestions(matches);
@@ -344,14 +380,15 @@ export function Chat() {
   }, [notes, setInputMessage]);
 
   // Complete the mention
-  const completeMention = useCallback((noteName: string) => {
+  const completeMention = useCallback((note: { id: number; name: string; folder: string | null }) => {
     if (mentionStart === -1) return;
     
     const cursorPos = textareaRef.current?.selectionStart || inputMessage.length;
     const before = inputMessage.slice(0, mentionStart);
     const after = inputMessage.slice(cursorPos);
-    
-    const newValue = `${before}@${noteName} ${after}`;
+
+    const mentionText = note.folder ? `${note.folder}/${note.name}` : note.name;
+    const newValue = `${before}@${mentionText} ${after}`;
     setInputMessage(newValue);
     setShowSuggestions(false);
     setSuggestions([]);
@@ -360,7 +397,7 @@ export function Chat() {
     // Focus back and set cursor position
     setTimeout(() => {
       if (textareaRef.current) {
-        const newPos = mentionStart + noteName.length + 2; // @ + name + space
+        const newPos = mentionStart + mentionText.length + 2; // @ + text + space
         textareaRef.current.focus();
         textareaRef.current.setSelectionRange(newPos, newPos);
       }
@@ -420,11 +457,11 @@ export function Chat() {
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
           <span className="font-medium text-text">
-            AI Assistant
+            {t('chat.title')}
           </span>
           {currentSession && (
             <span className="text-xs px-2 py-0.5 rounded bg-surface1 text-subtext0">
-              Session #{currentSession.id}
+              {t('chat.session', { id: currentSession.id })}
             </span>
           )}
         </div>
@@ -432,7 +469,7 @@ export function Chat() {
           onClick={handleNewSession}
           className="px-3 py-1.5 rounded text-sm transition-colors bg-surface0 text-text hover:bg-surface1"
         >
-          New Chat
+          {t('chat.newChat')}
         </button>
       </div>
 
@@ -448,10 +485,10 @@ export function Chat() {
               </svg>
             </div>
             <h3 className="text-lg font-medium mb-2 text-text">
-              Start a conversation
+              {t('chat.startConversation')}
             </h3>
             <p className="text-sm max-w-md mx-auto text-subtext0">
-              Ask me to search, create, or modify your notes. I can help you organize your knowledge base.
+              {t('chat.startConversationDesc')}
             </p>
           </div>
         )}
@@ -488,17 +525,18 @@ export function Chat() {
         {/* Suggestions dropdown */}
         {showSuggestions && suggestions.length > 0 && (
           <div className="absolute bottom-full left-4 right-4 mb-2 rounded-lg overflow-hidden shadow-lg border bg-surface0 border-surface1 max-h-[200px] overflow-y-auto">
-            {suggestions.map((name, index) => (
+            {suggestions.map((s, index) => (
               <button
-                key={name}
-                onClick={() => completeMention(name)}
+                key={`${s.id}-${s.folder ?? 'root'}-${s.name}`}
+                onClick={() => completeMention(s)}
                 className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 transition-colors text-text ${
                   index === selectedSuggestion ? 'bg-surface1' : 'bg-transparent'
                 }`}
                 onMouseEnter={() => setSelectedSuggestion(index)}
               >
                 <span className="text-mauve">@</span>
-                <span>{name}</span>
+                <span className="flex-1 text-left truncate">{s.name}</span>
+                {s.folder && <span className="text-xs text-subtext0 truncate">{s.folder}</span>}
               </button>
             ))}
           </div>
@@ -510,10 +548,9 @@ export function Chat() {
             value={inputMessage}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder="Ask about your notes... (use @ to mention notes)"
+            placeholder={t('chat.placeholder')}
             rows={1}
             className="flex-1 resize-none bg-transparent outline-none text-sm text-text min-h-[24px] max-h-[120px]"
-            disabled={isStreaming}
           />
           {isStreaming ? (
             <button
@@ -540,7 +577,7 @@ export function Chat() {
           )}
         </div>
         <p className="text-xs mt-2 text-overlay0">
-          Press Enter to send, Shift+Enter for new line
+          {t('chat.sendHint')}
         </p>
       </div>
     </div>

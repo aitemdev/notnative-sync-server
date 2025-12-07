@@ -1,11 +1,13 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { X, Sun, Moon, Monitor, Upload, Check, Palette, Type, Layout, Info, Brain, RefreshCw, Database, ChevronDown, Key } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { X, Sun, Moon, Monitor, Upload, Check, Palette, Type, Layout, Info, Brain, RefreshCw, Database, ChevronDown, Key, Globe } from 'lucide-react';
 import { useTheme } from './ThemeProvider';
 import { useAppStore } from '../../stores/app-store';
 import type { Theme, ThemeFile, ThemeColors } from '../../../shared/types/theme';
 import { THEME_JSON_SCHEMA } from '../../../shared/types/theme';
+import { changeLanguage, getCurrentLanguage } from '../../i18n';
 
-type SettingsTab = 'appearance' | 'ai' | 'editor' | 'about';
+type SettingsTab = 'appearance' | 'ai' | 'editor' | 'language' | 'about';
 
 /**
  * Hook to manage settings modal state globally
@@ -129,6 +131,8 @@ function SystemThemeCard({
   isSelected: boolean; 
   onSelect: () => void;
 }) {
+  const { t } = useTranslation();
+  
   return (
     <button
       onClick={onSelect}
@@ -153,11 +157,11 @@ function SystemThemeCard({
       
       <div className="flex items-center gap-2">
         <Monitor size={14} className="text-overlay0" />
-        <span className="text-sm font-medium text-text">Sistema</span>
+        <span className="text-sm font-medium text-text">{t('settings.appearance.system')}</span>
       </div>
       
       <p className="text-xs text-subtext0 mt-1">
-        Sigue el tema del sistema
+        {t('settings.appearance.followSystem')}
       </p>
     </button>
   );
@@ -167,6 +171,7 @@ function SystemThemeCard({
  * Import theme from JSON file
  */
 function ImportThemeButton({ onImport }: { onImport: (theme: Theme) => void }) {
+  const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   
@@ -228,7 +233,7 @@ function ImportThemeButton({ onImport }: { onImport: (theme: Theme) => void }) {
         className="flex items-center gap-2 px-3 py-2 rounded-lg border border-surface1 hover:border-surface2 hover:bg-surface0 transition-colors text-sm"
       >
         <Upload size={16} />
-        Importar tema
+        {t('settings.appearance.importTheme')}
       </button>
       {error && (
         <p className="text-red text-xs mt-2">{error}</p>
@@ -241,6 +246,7 @@ function ImportThemeButton({ onImport }: { onImport: (theme: Theme) => void }) {
  * Appearance settings tab
  */
 function AppearanceTab() {
+  const { t } = useTranslation();
   const { 
     currentTheme, 
     themePreference, 
@@ -258,7 +264,7 @@ function AppearanceTab() {
       <div>
         <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
           <Palette size={16} />
-          Tema
+          {t('settings.appearance.theme')}
         </h3>
         
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -286,7 +292,7 @@ function AppearanceTab() {
       {/* Custom themes */}
       {customThemes.length > 0 && (
         <div>
-          <h3 className="text-sm font-medium mb-3">Temas personalizados</h3>
+          <h3 className="text-sm font-medium mb-3">{t('settings.appearance.customThemes')}</h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {customThemes.map(theme => (
               <div key={theme.id} className="relative">
@@ -298,7 +304,7 @@ function AppearanceTab() {
                 <button
                   onClick={() => removeCustomTheme(theme.id)}
                   className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red text-base flex items-center justify-center hover:bg-maroon transition-colors"
-                  title="Eliminar tema"
+                  title={t('settings.appearance.deleteTheme')}
                 >
                   <X size={12} />
                 </button>
@@ -312,13 +318,13 @@ function AppearanceTab() {
       <div className="pt-4 border-t border-surface0">
         <ImportThemeButton onImport={addCustomTheme} />
         <p className="text-xs text-subtext0 mt-2">
-          Importa un archivo JSON con el schema de colores de NotNative.
+          {t('settings.appearance.importThemeDesc')}
         </p>
       </div>
       
       {/* Current theme colors preview */}
       <div className="pt-4 border-t border-surface0">
-        <h3 className="text-sm font-medium mb-3">Colores del tema actual</h3>
+        <h3 className="text-sm font-medium mb-3">{t('settings.appearance.currentThemeColors')}</h3>
         <div className="grid grid-cols-7 gap-2">
           {Object.entries(currentTheme.colors).map(([name, color]) => (
             <div key={name} className="flex flex-col items-center gap-1">
@@ -338,26 +344,82 @@ function AppearanceTab() {
  * Editor settings tab
  */
 function EditorTab() {
+  const { t } = useTranslation();
+  
   return (
     <div className="space-y-6">
       <div>
         <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
           <Type size={16} />
-          Tipografía
+          {t('settings.editor.typography')}
         </h3>
         <p className="text-sm text-subtext0">
-          Configuración de tipografía (próximamente)
+          {t('settings.editor.typographyDesc')}
         </p>
       </div>
       
       <div>
         <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
           <Layout size={16} />
-          Layout
+          {t('settings.editor.layout')}
         </h3>
         <p className="text-sm text-subtext0">
-          Configuración de layout (próximamente)
+          {t('settings.editor.layoutDesc')}
         </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Language settings tab
+ */
+function LanguageTab() {
+  const { t, i18n } = useTranslation();
+  const [currentLang, setCurrentLang] = useState(getCurrentLanguage());
+  
+  const handleLanguageChange = (lang: string) => {
+    changeLanguage(lang);
+    setCurrentLang(lang);
+  };
+  
+  const languages = [
+    { code: 'es', name: t('settings.language.spanish'), flag: '🇪🇸' },
+    { code: 'en', name: t('settings.language.english'), flag: '🇬🇧' },
+  ];
+  
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+          <Globe size={16} />
+          {t('settings.language.title')}
+        </h3>
+        <p className="text-sm text-subtext0 mb-4">
+          {t('settings.language.description')}
+        </p>
+        
+        <div className="space-y-2">
+          {languages.map((lang) => (
+            <button
+              key={lang.code}
+              onClick={() => handleLanguageChange(lang.code)}
+              className={`
+                w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-all text-left
+                ${currentLang === lang.code
+                  ? 'border-lavender bg-lavender/10'
+                  : 'border-surface1 hover:border-surface2 hover:bg-surface0'
+                }
+              `}
+            >
+              <span className="text-2xl">{lang.flag}</span>
+              <span className="font-medium">{lang.name}</span>
+              {currentLang === lang.code && (
+                <Check size={16} className="ml-auto text-lavender" />
+              )}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -367,6 +429,7 @@ function EditorTab() {
  * AI & Search settings tab
  */
 function AITab() {
+  const { t } = useTranslation();
   const [isReindexing, setIsReindexing] = useState(false);
   const [stats, setStats] = useState<{ totalNotes: number; totalChunks: number; lastUpdated: Date | null } | null>(null);
   const [reindexResult, setReindexResult] = useState<{ indexed: number; errors: number } | null>(null);
@@ -377,6 +440,13 @@ function AITab() {
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
   const [savingApiKey, setSavingApiKey] = useState(false);
   const [apiKeySaved, setApiKeySaved] = useState(false);
+
+  // Brave key states
+  const [braveKeyInfo, setBraveKeyInfo] = useState<{ hasKey: boolean; maskedKey: string }>({ hasKey: false, maskedKey: '' });
+  const [newBraveKey, setNewBraveKey] = useState('');
+  const [showBraveKeyInput, setShowBraveKeyInput] = useState(false);
+  const [savingBraveKey, setSavingBraveKey] = useState(false);
+  const [braveKeySaved, setBraveKeySaved] = useState(false);
   
   // Model states
   const [chatModel, setChatModel] = useState<string>('');
@@ -390,6 +460,7 @@ function AITab() {
   // Load stats and models on mount
   useEffect(() => {
     loadApiKeyInfo();
+    loadBraveKeyInfo();
     loadStats();
     loadModels();
     loadCurrentModels();
@@ -401,6 +472,15 @@ function AITab() {
       setApiKeyInfo(info);
     } catch (error) {
       console.error('Failed to load API key info:', error);
+    }
+  };
+
+  const loadBraveKeyInfo = async () => {
+    try {
+      const info = await window.electron.ai.getBraveApiKey();
+      setBraveKeyInfo(info);
+    } catch (error) {
+      console.error('Failed to load Brave API key info:', error);
     }
   };
   
@@ -425,6 +505,25 @@ function AITab() {
       setSavingApiKey(false);
     }
   };
+
+  const handleSaveBraveKey = async () => {
+    if (!newBraveKey.trim()) return;
+    setSavingBraveKey(true);
+    try {
+      const result = await window.electron.ai.setBraveApiKey(newBraveKey.trim());
+      if (result.success) {
+        setBraveKeySaved(true);
+        setNewBraveKey('');
+        setShowBraveKeyInput(false);
+        await loadBraveKeyInfo();
+        setTimeout(() => setBraveKeySaved(false), 3000);
+      }
+    } catch (error) {
+      console.error('Failed to save Brave API key:', error);
+    } finally {
+      setSavingBraveKey(false);
+    }
+  };
   
   const loadStats = async () => {
     try {
@@ -447,7 +546,7 @@ function AITab() {
       }
     } catch (error) {
       console.error('Failed to load models:', error);
-      setModelsError('Error cargando modelos de OpenRouter');
+      setModelsError(t('settings.ai.loadingModelsError'));
     } finally {
       setLoadingModels(false);
     }
@@ -513,10 +612,10 @@ function AITab() {
       <div>
         <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
           <Key size={16} />
-          API Key de OpenRouter
+          {t('settings.ai.apiKey')}
         </h3>
         <p className="text-sm text-subtext0 mb-3">
-          Configura tu API key de <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-lavender hover:underline">OpenRouter</a> para usar los modelos de IA.
+          {t('settings.ai.apiKeyDesc')} <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-lavender hover:underline">OpenRouter</a>
         </p>
         
         {apiKeyInfo.hasKey && !showApiKeyInput ? (
@@ -528,7 +627,7 @@ function AITab() {
               onClick={() => setShowApiKeyInput(true)}
               className="px-3 py-2 rounded-lg border border-surface1 hover:border-surface2 hover:bg-surface0 transition-colors text-sm"
             >
-              Cambiar
+              {t('common.change')}
             </button>
           </div>
         ) : (
@@ -538,7 +637,7 @@ function AITab() {
                 type="password"
                 value={newApiKey}
                 onChange={(e) => setNewApiKey(e.target.value)}
-                placeholder="sk-or-v1-..."
+                placeholder={t('settings.ai.apiKeyPlaceholder')}
                 className="flex-1 bg-surface0 border border-surface1 rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:border-lavender font-mono"
               />
               <button
@@ -546,7 +645,7 @@ function AITab() {
                 disabled={!newApiKey.trim() || savingApiKey}
                 className="px-4 py-2 rounded-lg bg-lavender text-base hover:bg-mauve transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {savingApiKey ? 'Guardando...' : 'Guardar'}
+                {savingApiKey ? t('settings.ai.saving') : t('common.save')}
               </button>
               {showApiKeyInput && apiKeyInfo.hasKey && (
                 <button
@@ -556,19 +655,84 @@ function AITab() {
                   }}
                   className="px-3 py-2 rounded-lg border border-surface1 hover:border-surface2 hover:bg-surface0 transition-colors text-sm"
                 >
-                  Cancelar
+                  {t('common.cancel')}
                 </button>
               )}
             </div>
             <p className="text-xs text-subtext0">
-              Tu API key se guarda localmente y nunca se comparte.
+              {t('settings.ai.apiKeyLocal')}
             </p>
           </div>
         )}
         
         {apiKeySaved && (
           <p className="text-xs text-green mt-2">
-            ✅ API key guardada correctamente
+            ✅ {t('settings.ai.apiKeySaved')}
+          </p>
+        )}
+      </div>
+
+      {/* Brave Search API Key */}
+      <div className="pt-4 border-t border-surface0">
+        <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+          <Globe size={16} />
+          {t('settings.ai.braveKey')}
+        </h3>
+        <p className="text-sm text-subtext0 mb-3">
+          {t('settings.ai.braveKeyDesc')}
+        </p>
+
+        {braveKeyInfo.hasKey && !showBraveKeyInput ? (
+          <div className="flex items-center gap-3">
+            <div className="flex-1 bg-surface0 border border-surface1 rounded-lg px-3 py-2 text-sm text-subtext1 font-mono">
+              {braveKeyInfo.maskedKey}
+            </div>
+            <button
+              onClick={() => {
+                setShowBraveKeyInput(true);
+                setNewBraveKey('');
+              }}
+              className="px-3 py-2 rounded-lg border border-surface1 hover:border-surface2 hover:bg-surface0 transition-colors text-sm"
+            >
+              {t('common.change')}
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                value={newBraveKey}
+                onChange={(e) => setNewBraveKey(e.target.value)}
+                placeholder={t('settings.ai.braveKeyPlaceholder')}
+                className="flex-1 bg-surface0 border border-surface1 rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:border-lavender font-mono"
+              />
+              <button
+                onClick={handleSaveBraveKey}
+                disabled={!newBraveKey.trim() || savingBraveKey}
+                className="px-4 py-2 rounded-lg bg-lavender text-base hover:bg-mauve transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {savingBraveKey ? t('settings.ai.saving') : t('common.save')}
+              </button>
+              {braveKeyInfo.hasKey && (
+                <button
+                  onClick={() => {
+                    setShowBraveKeyInput(false);
+                    setNewBraveKey('');
+                  }}
+                  className="px-3 py-2 rounded-lg border border-surface1 hover:border-surface2 hover:bg-surface0 transition-colors text-sm"
+                >
+                  {t('common.cancel')}
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-subtext0">{t('settings.ai.braveKeyLocal')}</p>
+          </div>
+        )}
+
+        {braveKeySaved && (
+          <p className="text-xs text-green mt-2">
+            ✅ {t('settings.ai.apiKeySaved')}
           </p>
         )}
       </div>
@@ -578,7 +742,7 @@ function AITab() {
         <div className="bg-red/10 border border-red/30 rounded-lg p-3">
           <p className="text-sm text-red">{modelsError}</p>
           <p className="text-xs text-subtext0 mt-1">
-            Asegúrate de tener configurada una API key válida de OpenRouter.
+            {t('settings.ai.apiKeyError')}
           </p>
         </div>
       )}
@@ -587,10 +751,10 @@ function AITab() {
       <div className="pt-4 border-t border-surface0">
         <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
           <Brain size={16} />
-          Modelo de Chat IA
+          {t('settings.ai.chatModel')}
         </h3>
         <p className="text-sm text-subtext0 mb-3">
-          Selecciona el modelo de lenguaje para el asistente de chat.
+          {t('settings.ai.chatModelDesc')}
         </p>
         
         <div className="relative">
@@ -601,14 +765,14 @@ function AITab() {
             className="w-full appearance-none bg-surface0 border border-surface1 rounded-lg px-3 py-2 pr-10 text-sm text-text focus:outline-none focus:border-lavender cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loadingModels ? (
-              <option>Cargando modelos...</option>
+              <option>{t('settings.ai.loadingModels')}</option>
             ) : availableModels.chat.length === 0 ? (
-              <option>No hay modelos disponibles</option>
+              <option>{t('settings.ai.noModelsAvailable')}</option>
             ) : (
               <>
                 {/* Show current model first if not in list */}
                 {chatModel && !availableModels.chat.some(m => m.id === chatModel) && (
-                  <option value={chatModel}>{chatModel} (actual)</option>
+                  <option value={chatModel}>{chatModel} ({t('settings.ai.current')})</option>
                 )}
                 {availableModels.chat.map((model) => (
                   <option key={model.id} value={model.id}>
@@ -623,7 +787,7 @@ function AITab() {
         
         {chatModelChanged && (
           <p className="text-xs text-green mt-2">
-            ✅ Modelo de chat actualizado
+            ✅ {t('settings.ai.chatModelUpdated')}
           </p>
         )}
       </div>
@@ -632,10 +796,10 @@ function AITab() {
       <div className="pt-4 border-t border-surface0">
         <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
           <Database size={16} />
-          Modelo de Embeddings
+          {t('settings.ai.embeddingModel')}
         </h3>
         <p className="text-sm text-subtext0 mb-3">
-          Selecciona el modelo para generar embeddings de tus notas. Al cambiar de modelo debes re-indexar todas las notas.
+          {t('settings.ai.embeddingModelDesc')}
         </p>
         
         <div className="relative">
@@ -646,14 +810,14 @@ function AITab() {
             className="w-full appearance-none bg-surface0 border border-surface1 rounded-lg px-3 py-2 pr-10 text-sm text-text focus:outline-none focus:border-lavender cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loadingModels ? (
-              <option>Cargando modelos...</option>
+              <option>{t('settings.ai.loadingModels')}</option>
             ) : availableModels.embedding.length === 0 ? (
-              <option>No hay modelos disponibles</option>
+              <option>{t('settings.ai.noModelsAvailable')}</option>
             ) : (
               <>
                 {/* Show current model first if not in list */}
                 {embeddingModel && !availableModels.embedding.some(m => m.id === embeddingModel) && (
-                  <option value={embeddingModel}>{embeddingModel} (actual)</option>
+                  <option value={embeddingModel}>{embeddingModel} ({t('settings.ai.current')})</option>
                 )}
                 {availableModels.embedding.map((model) => (
                   <option key={model.id} value={model.id}>
@@ -668,7 +832,7 @@ function AITab() {
         
         {embeddingModelChanged && (
           <p className="text-xs text-yellow mt-2">
-            ⚠️ Has cambiado el modelo. Re-indexa todas las notas para usar el nuevo modelo.
+            ⚠️ {t('settings.ai.embeddingModelWarning')}
           </p>
         )}
       </div>
@@ -677,7 +841,7 @@ function AITab() {
       <div className="pt-4 border-t border-surface0">
         <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
           <RefreshCw size={16} />
-          Indexación de Notas
+          {t('settings.ai.indexing')}
         </h3>
         
         {/* Stats */}
@@ -685,16 +849,16 @@ function AITab() {
           <div className="bg-surface0 rounded-lg p-3 mb-4 space-y-2">
             <div className="flex items-center gap-2 text-sm">
               <Database size={14} className="text-blue" />
-              <span className="text-subtext1">Notas indexadas:</span>
+              <span className="text-subtext1">{t('settings.ai.indexedNotes')}:</span>
               <span className="text-text font-medium">{stats.totalNotes}</span>
             </div>
             <div className="flex items-center gap-2 text-sm">
-              <span className="text-subtext1 ml-5">Chunks totales:</span>
+              <span className="text-subtext1 ml-5">{t('settings.ai.totalChunks')}:</span>
               <span className="text-text font-medium">{stats.totalChunks}</span>
             </div>
             {stats.lastUpdated && (
               <div className="flex items-center gap-2 text-sm">
-                <span className="text-subtext1 ml-5">Última actualización:</span>
+                <span className="text-subtext1 ml-5">{t('settings.ai.lastUpdated')}:</span>
                 <span className="text-text font-medium">
                   {new Date(stats.lastUpdated).toLocaleString()}
                 </span>
@@ -716,21 +880,20 @@ function AITab() {
           `}
         >
           <RefreshCw size={16} className={isReindexing ? 'animate-spin' : ''} />
-          {isReindexing ? 'Re-indexando...' : 'Re-indexar todas las notas'}
+          {isReindexing ? t('settings.ai.reindexing') : t('settings.ai.reindex')}
         </button>
         
         {reindexResult && (
           <p className="text-sm text-green mt-2">
-            ✅ Indexadas {reindexResult.indexed} notas
+            ✅ {t('settings.ai.reindexSuccess', { count: reindexResult.indexed })}
             {reindexResult.errors > 0 && (
-              <span className="text-yellow"> ({reindexResult.errors} errores)</span>
+              <span className="text-yellow"> ({t('settings.ai.reindexErrors', { count: reindexResult.errors })})</span>
             )}
           </p>
         )}
         
         <p className="text-xs text-subtext0 mt-3">
-          Las notas se indexan automáticamente cuando se crean o modifican. 
-          Usa este botón para re-indexar todas las notas existentes.
+          {t('settings.ai.indexingHelp')}
         </p>
       </div>
       
@@ -742,10 +905,10 @@ function AITab() {
           className="flex items-center gap-2 px-3 py-2 rounded-lg border border-surface1 hover:border-surface2 hover:bg-surface0 transition-colors text-sm disabled:opacity-50"
         >
           <RefreshCw size={14} className={loadingModels ? 'animate-spin' : ''} />
-          Actualizar lista de modelos
+          {t('settings.ai.refreshModels')}
         </button>
         <p className="text-xs text-subtext0 mt-2">
-          Los modelos disponibles se obtienen de la API de OpenRouter.
+          {t('settings.ai.refreshModelsDesc')}
         </p>
       </div>
     </div>
@@ -756,6 +919,8 @@ function AITab() {
  * About tab
  */
 function AboutTab() {
+  const { t } = useTranslation();
+  
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -769,15 +934,15 @@ function AboutTab() {
       </div>
       
       <p className="text-sm text-subtext1">
-        Una aplicación de notas con editor Vim, AI integrado y soporte para bases de datos.
+        {t('settings.about.description')}
       </p>
       
       <div className="pt-4 border-t border-surface0 space-y-2">
         <p className="text-xs text-subtext0">
-          Construido con Electron, React, CodeMirror y Tailwind CSS.
+          {t('settings.about.builtWith')}
         </p>
         <p className="text-xs text-subtext0">
-          Tema base: Catppuccin
+          {t('settings.about.baseTheme')}
         </p>
       </div>
     </div>
@@ -788,6 +953,7 @@ function AboutTab() {
  * Settings Modal Component
  */
 export function SettingsModal() {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance');
   const { isSettingsOpen, setIsSettingsOpen } = useAppStore();
@@ -835,10 +1001,11 @@ export function SettingsModal() {
   if (!isOpen) return null;
   
   const tabs: { id: SettingsTab; label: string; icon: React.ElementType }[] = [
-    { id: 'appearance', label: 'Apariencia', icon: Palette },
-    { id: 'ai', label: 'IA & Búsqueda', icon: Brain },
-    { id: 'editor', label: 'Editor', icon: Type },
-    { id: 'about', label: 'Acerca de', icon: Info },
+    { id: 'appearance', label: t('settings.tabs.appearance'), icon: Palette },
+    { id: 'ai', label: t('settings.tabs.ai'), icon: Brain },
+    { id: 'editor', label: t('settings.tabs.editor'), icon: Type },
+    { id: 'language', label: t('settings.tabs.language'), icon: Globe },
+    { id: 'about', label: t('settings.tabs.about'), icon: Info },
   ];
   
   return (
@@ -857,11 +1024,11 @@ export function SettingsModal() {
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-surface0">
-            <h2 className="text-lg font-semibold">Configuración</h2>
+            <h2 className="text-lg font-semibold">{t('settings.title')}</h2>
             <button
               onClick={handleClose}
               className="p-1.5 rounded-lg hover:bg-surface0 transition-colors"
-              aria-label="Cerrar"
+              aria-label={t('common.close')}
             >
               <X size={18} />
             </button>
@@ -894,6 +1061,7 @@ export function SettingsModal() {
               {activeTab === 'appearance' && <AppearanceTab />}
               {activeTab === 'ai' && <AITab />}
               {activeTab === 'editor' && <EditorTab />}
+              {activeTab === 'language' && <LanguageTab />}
               {activeTab === 'about' && <AboutTab />}
             </div>
           </div>

@@ -14,6 +14,7 @@ export interface ElectronAPI {
   notes: {
     list: (folder?: string) => Promise<NoteMetadata[]>;
     read: (name: string) => Promise<Note | null>;
+    readById: (id: number) => Promise<Note | null>;
     create: (name: string, content?: string, folder?: string) => Promise<NoteMetadata>;
     update: (name: string, content: string) => Promise<void>;
     updateById: (id: number, content: string) => Promise<NoteMetadata>;
@@ -57,6 +58,8 @@ export interface ElectronAPI {
     // API key management
     getApiKey: () => Promise<{ hasKey: boolean; maskedKey: string }>;
     setApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>;
+    getBraveApiKey: () => Promise<{ hasKey: boolean; maskedKey: string }>;
+    setBraveApiKey: (apiKey: string) => Promise<{ success: boolean; error?: string }>;
   };
   
   // Embeddings
@@ -149,6 +152,7 @@ const electronAPI: ElectronAPI = {
   notes: {
     list: (folder) => ipcRenderer.invoke(IPC_CHANNELS['notes:list'], folder),
     read: (name) => ipcRenderer.invoke(IPC_CHANNELS['notes:read'], name),
+    readById: (id) => ipcRenderer.invoke(IPC_CHANNELS['notes:read-by-id'], id),
     create: (name, content, folder) => ipcRenderer.invoke(IPC_CHANNELS['notes:create'], name, content, folder),
     update: (name, content) => ipcRenderer.invoke(IPC_CHANNELS['notes:update'], name, content),
     updateById: (id, content) => ipcRenderer.invoke(IPC_CHANNELS['notes:update-by-id'], id, content),
@@ -205,6 +209,8 @@ const electronAPI: ElectronAPI = {
     // API key management
     getApiKey: () => ipcRenderer.invoke(IPC_CHANNELS['ai:get-api-key']),
     setApiKey: (apiKey) => ipcRenderer.invoke(IPC_CHANNELS['ai:set-api-key'], apiKey),
+    getBraveApiKey: () => ipcRenderer.invoke(IPC_CHANNELS['ai:get-brave-api-key']),
+    setBraveApiKey: (apiKey) => ipcRenderer.invoke(IPC_CHANNELS['ai:set-brave-api-key'], apiKey),
   },
   
   // Embeddings API

@@ -4,9 +4,9 @@ import { IPC_CHANNELS } from '../../shared/types/ipc';
 import { NotesDirectory } from '../files/notes-directory';
 import { getAIClient, initAIClient, ChatOptions, ChatMessage as AIMessage } from '../ai/client';
 import { createToolContext } from '../ai/context';
-import { createAllTools } from '../ai/tools';
+import { createAllTools } from '../ai/tools/index.js';
 import type { ChatMessage, ChatSession } from '../../shared/types';
-import { getApiKey } from '../settings/store';
+import { getApiKey, getBraveApiKey, setBraveApiKey } from '../settings/store';
 
 // Store for active stream aborts
 const activeStreams = new Map<number, AbortController>();
@@ -96,38 +96,90 @@ export function registerAIHandlers(
       // Build messages for API with system prompt
       const systemPrompt: AIMessage = {
         role: 'system',
-        content: `You are a helpful AI assistant integrated into NotNative, a note-taking application. 
-You help users manage their notes, search for information, create content, and answer questions.
+        content: `You are an intelligent AI agent integrated into NotNative, a note-taking application. You help users manage their notes, search for information, create content, and answer questions.
 
-IMPORTANT RULES:
-- ALWAYS respond in the SAME LANGUAGE the user writes to you. If they write in Spanish, respond in Spanish. If they write in English, respond in English.
-- Be thorough and helpful in your responses. When the user asks for information, provide comprehensive answers based on what you find.
-- When the user mentions a note with @notename (e.g., "@test", "@My Note"), the @ symbol is ONLY for reference - the actual note name does NOT include the @. So "@test" means the note named "test", not "@test".
-- When the user asks you to modify, update, or add content to a note, use the update_note tool directly with the new content. Don't just search first.
-- When asked to create a note with specific content, use create_note with full content in one call.
-- When asked to clean/clear a note and add new content, use update_note with the complete new content.
-- Format your responses using Markdown when appropriate (headers, lists, bold, code blocks, etc.).
-- After completing an action, briefly confirm what you did.
+## CORE BEHAVIOR - YOU ARE AN AGENT, NOT A SIMPLE TOOL
+You MUST act as an autonomous agent that completes tasks end-to-end. NEVER just return tool results - always process them and provide a helpful final answer.
 
-SEARCH TOOLS - TWO-STEP APPROACH:
-1. First use "semantic_search" to find relevant notes about a TOPIC or CONCEPT. This searches by meaning/similarity using AI embeddings.
-2. After finding relevant notes, use "read_note" to read the FULL CONTENT of the most relevant note(s) to get complete information.
-3. Only use "search_notes" for exact keyword matching when semantic search doesn't work.
+## LANGUAGE RULE
+ALWAYS respond in the SAME LANGUAGE the user writes to you. If they write in Spanish, respond in Spanish. If in English, respond in English.
 
-CRITICAL - ALWAYS FOLLOW THIS WORKFLOW:
-1. When user asks about a topic → Use semantic_search first
-2. Look at the results and identify the most relevant note(s) with highest similarity %
-3. Use read_note to get the COMPLETE content of those notes
-4. Then provide a comprehensive answer based on the full content
+## NOTE REFERENCE FORMAT
+When a user mentions @notename (e.g., "@test"), the @ is just a reference marker - the actual note name is "test", not "@test".
 
-WHEN PRESENTING RESULTS:
-- NEVER just show raw search results. ALWAYS read the full notes and synthesize the information.
-- Answer the user's question directly using the information you found.
-- Explain what you found in your own words with specific details from the notes.
-- Always cite sources using [[note name]] format so users can click to open the note.
-- If the user asks "what does my note say about X", READ the note first and EXPLAIN the content.`,
+## CRITICAL: MULTI-STEP WORKFLOW FOR SEARCHES
+When asked to find information, ALWAYS follow these steps:
+
+1. **STEP 1 - Search**: Use \`semantic_search\` to find relevant notes about the topic
+2. **STEP 2 - Read**: Look at search results, identify the most relevant notes (highest similarity %), then use \`read_note\` to get the FULL content
+3. **STEP 3 - Answer**: Synthesize the information and provide a comprehensive answer in your own words
+
+EXAMPLE:
+- User asks: "What do my notes say about React hooks?"
+- You: First call semantic_search("React hooks")
+- You get results showing "dev-notes" has 78% relevance
+- You: Call read_note("dev-notes") to get full content
+- You: Finally explain what the notes say about React hooks, citing [[dev-notes]]
+
+## NEVER DO THIS:
+❌ Return raw search results without reading the notes
+❌ Say "I found X notes" without explaining what's in them
+❌ Stop after a tool call without synthesizing information
+❌ Ask the user to read notes themselves
+
+## ALWAYS DO THIS:
+✅ Complete the full workflow autonomously
+✅ Read the actual note content before answering
+✅ Provide specific details and insights from the notes
+✅ Cite sources using [[note name]] format
+✅ Give comprehensive, helpful answers
+
+## AVAILABLE TOOLS (CALL THEM DIRECTLY)
+Notes:
+- \`search_notes\`: full-text search by keywords
+- \`semantic_search\`: semantic search by meaning (use first when looking for info)
+- \`list_notes\`: list notes (optionally by folder)
+- \`read_note\`: read a note by exact name
+- \`create_note\`: create note (with optional folder)
+- \`update_note\`: replace entire note content
+- \`append_to_note\`: append content to a note
+- \`move_note\`: move a note to another folder
+- \`rename_note\`: rename a note
+- \`delete_note\`: move note to trash
+
+Folders:
+- \`list_folders\`, \`create_folder\`, \`delete_folder\`, \`rename_folder\`, \`move_folder\`
+
+Tags:
+- \`list_tags\`, \`create_tag\`, \`delete_tag\`, \`add_tag_to_note\`, \`remove_tag_from_note\`, \`get_notes_by_tag\`
+
+Embeddings:
+- \`semantic_search\` (see above)
+
+System:
+- \`get_app_info\`, \`list_models\`, etc. (utility/diagnostic)
+
+Web:
+- \`web_search\`: quick web lookup (DuckDuckGo JSON). Use only when local notes/tools are insufficient.
+
+## MODIFICATION TOOLS
+- Use \`update_note\` to replace entire note content
+- Use \`append_to_note\` to add content at the end
+- Use \`create_note\` to create new notes
+- Use \`move_note\` / \`move_folder\` for organization
+- After modifications, briefly confirm what you did
+
+## CONFIRMATION FOR DESTRUCTIVE ACTIONS
+- BEFORE executing delete, move, or rename operations (notes or folders), ask for a brief confirmation unless the user explicitly requested that exact action.
+- When asking, show a concise preview of what will change (e.g., source -> destination).
+
+## RESPONSE FORMAT
+- Use Markdown formatting (headers, lists, bold, code blocks)
+- Be thorough and helpful
+- Explain your findings in your own words with specific details`,
       };
 
+      // Build conversation messages
       const apiMessages: AIMessage[] = [
         systemPrompt,
         ...messages.map(m => ({
@@ -136,30 +188,115 @@ WHEN PRESENTING RESULTS:
         })),
       ];
 
-      // Stream the response
+      // Variables for tracking the response
       let fullContent = '';
-      const toolCallsInfo: Array<{ id: string; name: string; args: Record<string, unknown>; result: unknown }> = [];
+      const allToolCalls: Array<{ id: string; name: string; args: Record<string, unknown>; result: unknown }> = [];
+      let stepCount = 0;
 
-      console.log('🤖 Starting AI stream...');
-      
+      console.log('🤖 Starting AI stream with multi-step support (stopWhen)...');
+
+      // Use streamChat which now has stopWhen: stepCountIs(10) built-in
       const result = await aiClient.streamChat(apiMessages, tools, {
         model: session.model,
         temperature: session.temperature,
         maxTokens: session.maxTokens,
       });
 
-      // Handle streaming - result is a StreamTextResult
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const textResult = result as any;
+      const streamResult = result as any;
       
-      console.log('🤖 Stream result keys:', Object.keys(textResult || {}));
+      console.log('🤖 Stream result type:', typeof streamResult);
+      console.log('🤖 Stream result keys:', Object.keys(streamResult || {}));
+      console.log('🤖 Has fullStream:', 'fullStream' in streamResult);
+      console.log('🤖 Has textStream:', 'textStream' in streamResult);
+
+      // In v5, streamText returns an object with fullStream property
+      // Try to get fullStream directly
+      const fullStream = streamResult.fullStream;
       
-      // Process text stream
-      if (textResult && 'textStream' in textResult) {
+      if (fullStream) {
+        console.log('🤖 Processing fullStream...');
         try {
-          for await (const chunk of textResult.textStream) {
+          for await (const event of fullStream) {
             if (abortController.signal.aborted) break;
             
+            console.log('🤖 Event type:', event.type);
+            
+            switch (event.type) {
+              case 'start-step':
+                stepCount++;
+                console.log(`🤖 Step ${stepCount} started`);
+                mainWindow.webContents.send(IPC_CHANNELS['ai:stream-chunk'], {
+                  sessionId: session.id,
+                  chunk: '',
+                  fullContent,
+                  stepInfo: { step: stepCount, status: 'started' },
+                });
+                break;
+                
+              case 'text-delta':
+                // In v5, the text delta might be in different properties
+                const textChunk = event.textDelta ?? event.delta ?? event.text ?? '';
+                if (stepCount === 1 && fullContent.length === 0) {
+                  console.log('🤖 First text-delta event:', JSON.stringify(event));
+                }
+                fullContent += textChunk;
+                mainWindow.webContents.send(IPC_CHANNELS['ai:stream-chunk'], {
+                  sessionId: session.id,
+                  chunk: textChunk,
+                  fullContent,
+                });
+                break;
+                
+              case 'tool-call':
+                console.log(`🤖 Tool call: ${event.toolName}`, event.args);
+                allToolCalls.push({
+                  id: event.toolCallId || `tool-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                  name: event.toolName,
+                  args: (event.args as Record<string, unknown>) || {},
+                  result: null,
+                });
+                mainWindow.webContents.send(IPC_CHANNELS['ai:stream-chunk'], {
+                  sessionId: session.id,
+                  chunk: '',
+                  fullContent,
+                  toolCall: { name: event.toolName, args: event.args },
+                });
+                break;
+                
+              case 'tool-result':
+                console.log(`🤖 Tool result for: ${event.toolName}`);
+                const toolCall = allToolCalls.find(tc => tc.id === event.toolCallId);
+                if (toolCall) {
+                  toolCall.result = event.result;
+                }
+                mainWindow.webContents.send(IPC_CHANNELS['ai:stream-chunk'], {
+                  sessionId: session.id,
+                  chunk: '',
+                  fullContent,
+                  toolResult: { name: event.toolName, result: event.result },
+                });
+                break;
+                
+              case 'finish-step':
+                console.log(`🤖 Step ${stepCount} finished, reason: ${event.finishReason}`);
+                break;
+                
+              case 'finish':
+                console.log(`🤖 Stream finished after ${stepCount} steps`);
+                break;
+            }
+          }
+        } catch (streamError) {
+          console.error('🤖 Stream error:', streamError);
+          throw streamError;
+        }
+      } else if (streamResult && streamResult.textStream) {
+        // Fallback to simple textStream
+        console.log('🤖 Fallback to textStream...');
+        try {
+          for await (const chunk of streamResult.textStream) {
+            if (abortController.signal.aborted) break;
             fullContent += chunk;
             mainWindow.webContents.send(IPC_CHANNELS['ai:stream-chunk'], {
               sessionId: session.id,
@@ -171,85 +308,19 @@ WHEN PRESENTING RESULTS:
           console.error('🤖 Stream error:', streamError);
           throw streamError;
         }
-      }
-      
-      // Check for tool calls and their results
-      if (textResult && 'toolCalls' in textResult) {
-        try {
-          const calls = await textResult.toolCalls;
-          console.log('🤖 Tool calls:', calls);
-          for (const call of calls || []) {
-            toolCallsInfo.push({
-              id: call.toolCallId || `tool-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-              name: call.toolName,
-              args: (call.args as Record<string, unknown>) || {},
-              result: null,
-            });
-          }
-        } catch (e) {
-          console.log('🤖 No tool calls or error:', e);
-        }
+      } else {
+        console.error('🤖 No stream available!');
       }
 
-      // Check for tool results  
-      if (textResult && 'toolResults' in textResult) {
-        try {
-          const results = await textResult.toolResults;
-          console.log('🤖 Tool results:', results);
-          for (let i = 0; i < (results || []).length; i++) {
-            const toolResult = results[i];
-            // The SDK uses 'output' not 'result'
-            const output = toolResult.output || toolResult.result;
-            if (toolCallsInfo[i]) {
-              toolCallsInfo[i].result = output;
-            }
-            // Add tool result to content if no text was generated
-            if (!fullContent && output) {
-              fullContent += `${output}\n`;
-            }
-          }
-        } catch (e) {
-          console.log('🤖 No tool results or error:', e);
-        }
-      }
-
-      // If still no content, try to get the final text
-      if (!fullContent && textResult && 'text' in textResult) {
-        try {
-          const finalText = await textResult.text;
-          if (finalText) {
-            fullContent = finalText;
-          }
-          console.log('🤖 Got text from result:', fullContent.length);
-        } catch (e) {
-          console.log('🤖 No text property');
-        }
-      }
-
-      // If we had tool calls but no content, create a summary from tool outputs
-      if (!fullContent && toolCallsInfo.length > 0) {
-        fullContent = toolCallsInfo.map(tc => {
-          const resultStr = typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result);
-          return `**${tc.name}**:\n${resultStr}`;
-        }).join('\n\n');
-      }
-      
       // Fallback message if still empty
-      if (!fullContent) {
-        fullContent = 'La operación se completó pero no se generó respuesta.';
+      if (!fullContent.trim()) {
+        fullContent = 'La operación se completó pero no se generó respuesta de texto.';
       }
       
+      console.log('🤖 Stream finished:');
       console.log('🤖 Final content length:', fullContent.length);
-      console.log('🤖 Tool calls count:', toolCallsInfo.length);
-
-      // Send final content if it was built from tool results
-      if (fullContent && toolCallsInfo.length > 0) {
-        mainWindow.webContents.send(IPC_CHANNELS['ai:stream-chunk'], {
-          sessionId: session.id,
-          chunk: fullContent,
-          fullContent,
-        });
-      }
+      console.log('🤖 Total tool calls:', allToolCalls.length);
+      console.log('🤖 Total steps:', stepCount);
 
       // Create assistant message
       const assistantMsg: ChatMessage = {
@@ -258,7 +329,7 @@ WHEN PRESENTING RESULTS:
         role: 'assistant',
         content: fullContent || 'La acción se completó pero no hubo respuesta de texto.',
         createdAt: new Date(),
-        toolCalls: toolCallsInfo.length > 0 ? toolCallsInfo : undefined,
+        toolCalls: allToolCalls.length > 0 ? allToolCalls : undefined,
       };
       messages.push(assistantMsg);
 
@@ -321,6 +392,24 @@ WHEN PRESENTING RESULTS:
     if (controller) {
       controller.abort();
       activeStreams.delete(sessionId);
+    }
+  });
+
+  // ============== BRAVE API KEY ==============
+  ipcMain.handle(IPC_CHANNELS['ai:get-brave-api-key'], async () => {
+    const key = getBraveApiKey();
+    if (!key) return { hasKey: false, maskedKey: '' };
+    const masked = key.length > 8 ? key.slice(0, 4) + '...' + key.slice(-4) : '••••';
+    return { hasKey: true, maskedKey: masked };
+  });
+
+  ipcMain.handle(IPC_CHANNELS['ai:set-brave-api-key'], async (_event, apiKey: string) => {
+    try {
+      setBraveApiKey(apiKey);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to set Brave API key:', error);
+      return { success: false, error: (error as Error).message };
     }
   });
 

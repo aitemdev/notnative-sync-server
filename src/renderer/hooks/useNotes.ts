@@ -17,9 +17,8 @@ export function useNotes() {
   const loadFolders = useCallback(async () => {
     try {
       const foldersList = await window.electron.folders.list();
-      // Extract path strings from folder metadata
-      const folderPaths = foldersList.map(f => f.path);
-      setFolders(folderPaths);
+      // Backend returns string[] directly (folder paths)
+      setFolders(foldersList);
     } catch (error) {
       console.error('Error loading folders:', error);
     }
@@ -35,9 +34,9 @@ export function useNotes() {
   }, [setTags]);
 
   const openNote = useCallback(async (note: NoteMetadata) => {
-    console.log('🔓 Opening note:', note.name, note);
+    console.log('🔓 Opening note by id:', note.id, note.name, note);
     try {
-      const fullNote = await window.electron.notes.read(note.name);
+      const fullNote = await window.electron.notes.readById(note.id);
       console.log('🔓 Full note received:', fullNote);
       if (fullNote) {
         console.log('🔓 Setting current note and content, content length:', fullNote.content?.length);

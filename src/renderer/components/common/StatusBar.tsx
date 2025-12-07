@@ -1,8 +1,10 @@
+import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../stores/app-store';
 import { Settings, PanelLeftClose, PanelLeft, MessageSquare } from 'lucide-react';
 import { EditorMode } from '../../lib/editor/types';
 
 export default function StatusBar() {
+  const { t } = useTranslation();
   const { 
     currentNote, 
     editorMode,
@@ -16,17 +18,17 @@ export default function StatusBar() {
   const getModeDisplay = () => {
     switch (editorMode) {
       case EditorMode.Normal:
-        return { text: 'NORMAL', className: 'bg-blue text-crust' };
+        return { text: t('editorModes.normal'), className: 'bg-blue text-crust' };
       case EditorMode.Insert:
-        return { text: 'INSERT', className: 'bg-green text-crust' };
+        return { text: t('editorModes.insert'), className: 'bg-green text-crust' };
       case EditorMode.Visual:
-        return { text: 'VISUAL', className: 'bg-mauve text-crust' };
+        return { text: t('editorModes.visual'), className: 'bg-mauve text-crust' };
       case EditorMode.Command:
-        return { text: 'COMMAND', className: 'bg-yellow text-crust' };
+        return { text: t('editorModes.command'), className: 'bg-yellow text-crust' };
       case EditorMode.Search:
-        return { text: 'SEARCH', className: 'bg-peach text-crust' };
+        return { text: t('editorModes.search'), className: 'bg-peach text-crust' };
       default:
-        return { text: 'NORMAL', className: 'bg-blue text-crust' };
+        return { text: t('editorModes.normal'), className: 'bg-blue text-crust' };
     }
   };
 
@@ -40,7 +42,7 @@ export default function StatusBar() {
         <button
           onClick={toggleSidebar}
           className="h-full px-2 hover:bg-surface0 hover:text-text transition-colors"
-          title={sidebarOpen ? 'Ocultar sidebar (Ctrl+B)' : 'Mostrar sidebar (Ctrl+B)'}
+          title={sidebarOpen ? `${t('statusBar.hideSidebar')} (Ctrl+B)` : `${t('statusBar.showSidebar')} (Ctrl+B)`}
         >
           {sidebarOpen ? <PanelLeftClose size={14} /> : <PanelLeft size={14} />}
         </button>
@@ -70,7 +72,7 @@ export default function StatusBar() {
               ? 'bg-mauve text-crust' 
               : 'hover:bg-surface0 hover:text-text'
           }`}
-          title={rightPanelOpen ? 'Ocultar chat (Ctrl+Shift+C)' : 'Mostrar chat (Ctrl+Shift+C)'}
+          title={rightPanelOpen ? `${t('statusBar.hideChat')} (Ctrl+Shift+C)` : `${t('statusBar.showChat')} (Ctrl+Shift+C)`}
         >
           <MessageSquare size={14} />
           <span className="text-xs hidden sm:inline">AI</span>
@@ -80,7 +82,7 @@ export default function StatusBar() {
         <button
           onClick={() => setIsSettingsOpen(true)}
           className="h-full px-2 hover:bg-surface0 hover:text-text transition-colors"
-          title="Configuración (Ctrl+,)"
+          title={`${t('statusBar.settings')} (Ctrl+,)`}
         >
           <Settings size={14} />
         </button>

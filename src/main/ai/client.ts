@@ -1,10 +1,11 @@
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
-import { streamText, generateText, CoreMessage } from 'ai';
+import { streamText, generateText, CoreMessage, stepCountIs } from 'ai';
 import { AI_EMBEDDING_MODEL } from '../../shared/constants';
 
 // Default models
 const DEFAULT_MODEL = 'openai/gpt-4o-mini';
 const DEFAULT_EMBEDDING_DIMENSIONS = 1536;
+const DEFAULT_MAX_STEPS = 10; // For multi-step agentic behavior
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
@@ -17,6 +18,7 @@ export interface ChatOptions {
   maxTokens?: number;
   temperature?: number;
   stream?: boolean;
+  maxSteps?: number; // For multi-step agentic behavior (uses stopWhen internally)
 }
 
 // Tools type from ai SDK
@@ -82,11 +84,15 @@ export class AIClient {
       content: m.content,
     }));
 
+    // Use stopWhen for multi-step agentic behavior (v5 API)
+    const maxSteps = options?.maxSteps ?? DEFAULT_MAX_STEPS;
+
     if (options?.stream) {
       return streamText({
         model: modelInstance,
         messages: coreMessages,
         tools,
+        stopWhen: stepCountIs(maxSteps),
       });
     }
 
@@ -94,6 +100,7 @@ export class AIClient {
       model: modelInstance,
       messages: coreMessages,
       tools,
+      stopWhen: stepCountIs(maxSteps),
     });
   }
 

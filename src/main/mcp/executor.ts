@@ -134,6 +134,7 @@ export class MCPToolExecutor {
 
       const noteFile = NoteFile.open(metadata.path);
       noteFile.trash(this.notesDir);
+      this.notesDb.removeNoteFromFTS(metadata.id);
       this.notesDb.deleteNote(metadata.id);
 
       return { success: true };

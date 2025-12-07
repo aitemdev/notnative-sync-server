@@ -54,6 +54,25 @@ export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirect
     }
   });
 
+  ipcMain.handle(IPC_CHANNELS['notes:read-by-id'], async (_, id: number) => {
+    console.log(`📖 Reading note by id: ${id}`);
+    const metadata = notesDb.getNoteById(id);
+    if (!metadata) {
+      console.log(`❌ Note not found by id: ${id}`);
+      return null;
+    }
+
+    try {
+      const noteFile = NoteFile.open(metadata.path);
+      const content = noteFile.read();
+      const tags = tagsDb.getTagsForNote(metadata.id).map(t => t.name);
+      return { ...metadata, content, tags };
+    } catch (error) {
+      console.error(`Error reading note id ${id}:`, error);
+      return null;
+    }
+  });
+
   ipcMain.handle(IPC_CHANNELS['notes:create'], async (_, name: string, content?: string, folder?: string) => {
     const fileName = `${name}.md`;
     const filePath = folder 
@@ -128,7 +147,8 @@ export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirect
     // Move to trash instead of deleting
     noteFile.trash(notesDir);
 
-    // Remove from database
+    // Remove from FTS and database
+    notesDb.removeNoteFromFTS(metadata.id);
     notesDb.deleteNote(metadata.id);
   });
 

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppStore, type SidebarPanel } from '../../stores/app-store';
 import NotesList from './NotesList';
 import SearchPanel from './SearchPanel';
@@ -9,14 +10,15 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ onClose }: SidebarProps) {
+  const { t } = useTranslation();
   const { sidebarPanel, setSidebarPanel } = useAppStore();
   const [showNewNoteInput, setShowNewNoteInput] = useState(false);
 
   const panels: { id: SidebarPanel; icon: React.ElementType; label: string }[] = [
-    { id: 'notes', icon: FileText, label: 'Notas' },
-    { id: 'search', icon: Search, label: 'Buscar' },
-    { id: 'bases', icon: Database, label: 'Bases' },
-    { id: 'chat', icon: MessageSquare, label: 'Chat' },
+    { id: 'notes', icon: FileText, label: t('sidebar.panels.notes') },
+    { id: 'search', icon: Search, label: t('sidebar.panels.search') },
+    { id: 'bases', icon: Database, label: t('sidebar.panels.bases') },
+    { id: 'chat', icon: MessageSquare, label: t('sidebar.panels.chat') },
   ];
 
   return (
@@ -49,12 +51,12 @@ export default function Sidebar({ onClose }: SidebarProps) {
         {sidebarPanel === 'search' && <SearchPanel />}
         {sidebarPanel === 'bases' && (
           <div className="p-3 sm:p-4 text-subtext0 text-xs sm:text-sm">
-            Bases de datos (próximamente)
+            {t('sidebar.basesComingSoon')}
           </div>
         )}
         {sidebarPanel === 'chat' && (
           <div className="p-3 sm:p-4 text-subtext0 text-xs sm:text-sm">
-            Chat AI (próximamente)
+            {t('sidebar.chatComingSoon')}
           </div>
         )}
       </div>

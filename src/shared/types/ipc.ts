@@ -4,6 +4,7 @@ export const IPC_CHANNELS = {
   // ============== NOTES ==============
   'notes:list': 'notes:list',
   'notes:read': 'notes:read',
+  'notes:read-by-id': 'notes:read-by-id',
   'notes:create': 'notes:create',
   'notes:update': 'notes:update',
   'notes:update-by-id': 'notes:update-by-id',
@@ -50,6 +51,8 @@ export const IPC_CHANNELS = {
   'ai:set-chat-model': 'ai:set-chat-model',
   'ai:get-api-key': 'ai:get-api-key',
   'ai:set-api-key': 'ai:set-api-key',
+  'ai:get-brave-api-key': 'ai:get-brave-api-key',
+  'ai:set-brave-api-key': 'ai:set-brave-api-key',
 
   // ============== EMBEDDINGS ==============
   'embeddings:search': 'embeddings:search',
