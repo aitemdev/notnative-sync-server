@@ -1,0 +1,39 @@
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import electron from 'vite-plugin-electron';
+import renderer from 'vite-plugin-electron-renderer';
+import path from 'path';
+
+export default defineConfig({
+  plugins: [
+    react(),
+    electron([
+      {
+        entry: 'src/main/index.ts',
+        onstart({ startup }) {
+          startup();
+        },
+        vite: {
+          build: {
+            outDir: 'dist/main',
+            rollupOptions: {
+              external: ['electron', 'better-sqlite3'],
+            },
+          },
+        },
+      },
+      // Preload is built separately with esbuild (scripts/build-preload.mjs)
+    ]),
+    renderer(),
+  ],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, 'src/renderer'),
+      '@main': path.resolve(__dirname, 'src/main'),
+      '@shared': path.resolve(__dirname, 'src/shared'),
+    },
+  },
+  build: {
+    outDir: 'dist/renderer',
+  },
+});
