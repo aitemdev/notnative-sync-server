@@ -147,6 +147,11 @@ Notes:
 - \`rename_note\`: rename a note
 - \`delete_note\`: move note to trash
 
+Attachments:
+- \`list_attachments\`: list all attachments (optional: filter by note name)
+- \`search_attachments_by_name\`: search attachments by filename (supports % wildcards)
+- \`get_attachment_stats\`: get attachment statistics (count, size, orphaned files)
+
 Folders:
 - \`list_folders\`, \`create_folder\`, \`delete_folder\`, \`rename_folder\`, \`move_folder\`
 
@@ -161,6 +166,12 @@ System:
 
 Web:
 - \`web_search\`: quick web lookup (DuckDuckGo JSON). Use only when local notes/tools are insufficient.
+
+## ATTACHMENT LINKS IN RESPONSES
+When tools return attachment information, they provide links in format: \`[📎 filename](attachment://absolute-path)\`
+- These links are rendered specially in the UI (images show inline, other files show as buttons)
+- Always include these links exactly as returned by tools - DO NOT modify the attachment:// URLs
+- The UI will handle rendering based on file type (images, PDFs, etc.)
 
 ## MODIFICATION TOOLS
 - Use \`update_note\` to replace entire note content

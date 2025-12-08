@@ -91,6 +91,16 @@ export interface ElectronAPI {
     setSettings: (settings: Record<string, unknown>) => Promise<void>;
     getTheme: () => Promise<'light' | 'dark' | 'system'>;
     setTheme: (theme: 'light' | 'dark' | 'system') => Promise<void>;
+    getDocPath: (fileName: string) => Promise<string>;
+  };
+
+  dialog: {
+    openDirectory: () => Promise<string | null>;
+  };
+
+  shell: {
+    openPath: (path: string) => Promise<{ success: boolean; error?: string }>;
+    showItemInFolder: (path: string) => Promise<void>;
   };
   
   // Window
@@ -106,12 +116,23 @@ export interface ElectronAPI {
   files: {
     getNotesDirectory: () => Promise<string>;
     setNotesDirectory: (path: string) => Promise<void>;
+    saveAs: (sourcePath: string) => Promise<{ success: boolean; error?: string; destination?: string; canceled?: boolean }>;
+    getSize: (filePath: string, notePath?: string) => Promise<{ success: boolean; size?: number; error?: string; path?: string }>;
     onChanged: (callback: (type: string, path: string) => void) => () => void;
   };
 
   // Images
   images: {
     save: (noteId: number, fileName: string, data: Uint8Array | ArrayBuffer) => Promise<{ relativePath: string }>;
+  };
+
+  // Attachments
+  attachments: {
+    open: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+    getByNote: (noteName: string) => Promise<{ success: boolean; attachments?: NoteAttachment[]; error?: string }>;
+    search: (query: string, limit?: number) => Promise<{ success: boolean; attachments?: NoteAttachment[]; error?: string }>;
+    getStats: () => Promise<{ success: boolean; totalAttachments?: number; totalSize?: number; orphanedCount?: number }>;
+    cleanOrphans: () => Promise<{ success: boolean; cleaned?: number; error?: string }>;
   };
   
   // Note content events
@@ -138,6 +159,7 @@ import type {
   Reminder,
   SemanticSearchResult,
   ModelInfo,
+  NoteAttachment,
 } from '../shared/types';
 
 // Create the API
@@ -248,6 +270,18 @@ const electronAPI: ElectronAPI = {
     setSettings: (settings) => ipcRenderer.invoke(IPC_CHANNELS['app:set-settings'], settings),
     getTheme: () => ipcRenderer.invoke(IPC_CHANNELS['app:get-theme']),
     setTheme: (theme) => ipcRenderer.invoke(IPC_CHANNELS['app:set-theme'], theme),
+    getDocPath: (fileName: string) => ipcRenderer.invoke(IPC_CHANNELS['app:get-doc-path'], fileName) as Promise<string>,
+  },
+  
+  // Dialogs
+  dialog: {
+    openDirectory: () => ipcRenderer.invoke(IPC_CHANNELS['dialog:open-directory']) as Promise<string | null>,
+  },
+
+  // Shell
+  shell: {
+    openPath: (path: string) => ipcRenderer.invoke(IPC_CHANNELS['shell:open-path'], path) as Promise<{ success: boolean; error?: string }>,
+    showItemInFolder: (path: string) => ipcRenderer.invoke(IPC_CHANNELS['shell:show-item-in-folder'], path) as Promise<void>,
   },
   
   // Window API
@@ -263,6 +297,8 @@ const electronAPI: ElectronAPI = {
   files: {
     getNotesDirectory: () => ipcRenderer.invoke(IPC_CHANNELS['files:get-notes-directory']),
     setNotesDirectory: (path) => ipcRenderer.invoke(IPC_CHANNELS['files:set-notes-directory'], path),
+    saveAs: (sourcePath: string) => ipcRenderer.invoke(IPC_CHANNELS['files:save-as'], sourcePath) as Promise<{ success: boolean; error?: string; destination?: string; canceled?: boolean }>,
+    getSize: (filePath: string, notePath?: string) => ipcRenderer.invoke(IPC_CHANNELS['files:get-size'], filePath, notePath) as Promise<{ success: boolean; size?: number; error?: string; path?: string }>,
     onChanged: (callback) => {
       const subscription = (_event: IpcRendererEvent, type: string, path: string) => callback(type, path);
       ipcRenderer.on(IPC_CHANNELS['files:changed'], subscription);
@@ -273,6 +309,15 @@ const electronAPI: ElectronAPI = {
   // Images API
   images: {
     save: (noteId, fileName, data) => ipcRenderer.invoke(IPC_CHANNELS['images:save'], noteId, fileName, data),
+  },
+
+  // Attachments API
+  attachments: {
+    open: (filePath: string) => ipcRenderer.invoke(IPC_CHANNELS['attachments:open'], filePath),
+    getByNote: (noteName: string) => ipcRenderer.invoke(IPC_CHANNELS['attachments:get-by-note'], noteName),
+    search: (query: string, limit?: number) => ipcRenderer.invoke(IPC_CHANNELS['attachments:search'], query, limit),
+    getStats: () => ipcRenderer.invoke(IPC_CHANNELS['attachments:get-stats']),
+    cleanOrphans: () => ipcRenderer.invoke(IPC_CHANNELS['attachments:clean-orphans']),
   },
   
   // Note content updates (from AI tools)

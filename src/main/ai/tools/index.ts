@@ -5,6 +5,7 @@ import { createFolderTools } from './folders';
 import { createSystemTools } from './system';
 import { createEmbeddingTools } from './embeddings';
 import { createWebTools } from './web';
+import { createAttachmentTools } from './attachments';
 
 export function createAllTools(ctx: ToolContext) {
   return {
@@ -14,6 +15,7 @@ export function createAllTools(ctx: ToolContext) {
     ...createSystemTools(ctx),
     ...createEmbeddingTools(ctx),
     ...createWebTools(),
+    ...createAttachmentTools(ctx),
   };
 }
 
@@ -23,3 +25,4 @@ export { createFolderTools } from './folders';
 export { createSystemTools } from './system';
 export { createEmbeddingTools } from './embeddings';
 export { createWebTools } from './web';
+export { createAttachmentTools } from './attachments';

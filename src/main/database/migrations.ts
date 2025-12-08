@@ -231,6 +231,24 @@ const MIGRATIONS: string[] = [
     ALTER TABLE note_embeddings ADD COLUMN content_hash TEXT;
     CREATE INDEX IF NOT EXISTS idx_embeddings_hash ON note_embeddings(note_path, content_hash);
   `,
+
+  // v12: Attachments table
+  `
+    CREATE TABLE IF NOT EXISTS note_attachments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      note_path TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      file_path TEXT NOT NULL UNIQUE,
+      file_size INTEGER NOT NULL,
+      mime_type TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (note_path) REFERENCES notes(path) ON DELETE CASCADE
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_attachments_note ON note_attachments(note_path);
+    CREATE INDEX IF NOT EXISTS idx_attachments_path ON note_attachments(file_path);
+    CREATE INDEX IF NOT EXISTS idx_attachments_name ON note_attachments(file_name);
+  `,
 ];
 
 export function runMigrations(db: Database.Database): void {

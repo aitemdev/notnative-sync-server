@@ -14,7 +14,8 @@
     "change": "Change",
     "refresh": "Refresh",
     "rename": "Rename",
-    "comingSoon": "Coming soon"
+    "comingSoon": "Coming soon",
+    "saving": "Saving..."
   },
   "editor": {
     "noNoteSelected": "No note selected",
@@ -72,7 +73,8 @@
     "showSidebar": "Show sidebar",
     "hideChat": "Hide chat",
     "showChat": "Show chat",
-    "settings": "Settings"
+    "settings": "Settings",
+    "attachments": "Attachments"
   },
   "editorModes": {
     "normal": "NORMAL",
@@ -88,6 +90,7 @@
       "ai": "AI & Search",
       "editor": "Editor",
       "language": "Language",
+      "storage": "Storage",
       "about": "About"
     },
     "appearance": {
@@ -146,6 +149,17 @@
       "spanish": "Español",
       "english": "English"
     },
+    "storage": {
+      "title": "Notes folder",
+      "desc": "By default, a secure internal folder is used. You can choose another if needed.",
+      "warning": "Network or cloud folders may be slow or unstable; use at your own risk.",
+      "defaultPath": "Default path",
+      "change": "Change",
+      "pickError": "Could not select folder",
+      "saveError": "Could not save folder",
+      "loadError": "Could not load settings",
+      "restartHint": "Restart to reindex the new folder if you change the path."
+    },
     "about": {
       "description": "A note-taking app with Vim editor, integrated AI, and database support.",
       "builtWith": "Built with Electron, React, CodeMirror, and Tailwind CSS.",
@@ -166,5 +180,12 @@
   "theme": {
     "dark": "Dark",
     "light": "Light"
+  },
+  "attachments": {
+    "title": "Attachments",
+    "empty": "No attachments",
+    "preview": "Preview",
+    "openExternal": "Open with external app",
+    "delete": "Delete"
   }
 }

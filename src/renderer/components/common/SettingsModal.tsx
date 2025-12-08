@@ -1,13 +1,14 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Sun, Moon, Monitor, Upload, Check, Palette, Type, Layout, Info, Brain, RefreshCw, Database, ChevronDown, Key, Globe } from 'lucide-react';
+import { X, Sun, Moon, Monitor, Upload, Check, Palette, Type, Layout, Info, Brain, RefreshCw, Database, ChevronDown, Key, Globe, Folder, AlertTriangle, Paperclip, FileText } from 'lucide-react';
 import { useTheme } from './ThemeProvider';
 import { useAppStore } from '../../stores/app-store';
 import type { Theme, ThemeFile, ThemeColors } from '../../../shared/types/theme';
 import { THEME_JSON_SCHEMA } from '../../../shared/types/theme';
 import { changeLanguage, getCurrentLanguage } from '../../i18n';
+import { HelpModal } from './HelpModal';
 
-type SettingsTab = 'appearance' | 'ai' | 'editor' | 'language' | 'about';
+type SettingsTab = 'appearance' | 'ai' | 'editor' | 'language' | 'storage' | 'about';
 
 /**
  * Hook to manage settings modal state globally
@@ -421,6 +422,246 @@ function LanguageTab() {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Storage settings tab (notes directory)
+ */
+function StorageTab() {
+  const { t } = useTranslation();
+  const [loading, setLoading] = useState(true);
+  const [currentPath, setCurrentPath] = useState<string>('');
+  const [pendingPath, setPendingPath] = useState<string>('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    window.electron.app.getSettings()
+      .then((settings) => {
+        if (!mounted) return;
+        const path = (settings as { notesRoot?: string }).notesRoot || '';
+        setCurrentPath(path);
+        setPendingPath(path);
+      })
+      .catch((err) => {
+        console.error('Failed to load settings', err);
+        setError(t('settings.storage.loadError', 'No se pudieron cargar los ajustes'));
+      })
+      .finally(() => mounted && setLoading(false));
+    return () => { mounted = false; };
+  }, [t]);
+
+  const handlePickFolder = async () => {
+    setError(null);
+    try {
+      const picked = await window.electron.dialog.openDirectory();
+      if (picked) {
+        setPendingPath(picked);
+      }
+    } catch (err) {
+      console.error('Folder pick failed', err);
+      setError(t('settings.storage.pickError', 'No se pudo seleccionar la carpeta'));
+    }
+  };
+
+  const handleSave = async () => {
+    setError(null);
+    setSaving(true);
+    try {
+      await window.electron.app.setSettings({ notesRoot: pendingPath || undefined });
+      setCurrentPath(pendingPath);
+    } catch (err) {
+      console.error('Failed to save settings', err);
+      setError(t('settings.storage.saveError', 'No se pudo guardar la carpeta'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-2 p-3 rounded-lg border border-surface0 bg-surface0/50">
+        <AlertTriangle size={16} className="text-yellow mt-0.5" />
+        <p className="text-sm text-subtext0">
+          {t('settings.storage.warning', 'Las carpetas en red o nubes pueden ser lentas o inestables; úsalo bajo tu responsabilidad.')}
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium flex items-center gap-2">
+          <Folder size={16} />
+          {t('settings.storage.title', 'Carpeta de notas')}
+        </h3>
+        <p className="text-sm text-subtext0">
+          {t('settings.storage.desc', 'Por defecto se usa una carpeta interna segura. Puedes elegir otra si lo necesitas.')}
+        </p>
+
+        {loading ? (
+          <p className="text-sm text-subtext0">{t('common.loading', 'Cargando...')}</p>
+        ) : (
+          <div className="space-y-2">
+            <div className="px-3 py-2 rounded-lg border border-surface1 bg-surface0 text-sm text-text flex items-center justify-between gap-2">
+              <span className="truncate" title={pendingPath || t('settings.storage.defaultPath', 'Ruta por defecto')}>
+                {pendingPath || t('settings.storage.defaultPath', 'Ruta por defecto')}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={async () => {
+                    const pathToOpen = pendingPath || await window.electron.files.getNotesDirectory();
+                    await window.electron.shell.showItemInFolder(pathToOpen);
+                  }}
+                  className="p-1.5 rounded-md bg-surface1 hover:bg-surface2 text-subtext0 hover:text-text transition-colors"
+                  title="Abrir carpeta"
+                >
+                  <Folder size={16} />
+                </button>
+                <button
+                  onClick={handlePickFolder}
+                  className="px-3 py-1 rounded-md bg-surface1 hover:bg-surface2 text-sm"
+                >
+                  {t('settings.storage.change', 'Cambiar')}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSave}
+                disabled={saving || loading}
+                className="px-3 py-2 rounded-md bg-lavender text-base hover:bg-lavender/90 disabled:opacity-60"
+              >
+                {saving ? t('common.saving', 'Guardando...') : t('common.save', 'Guardar')}
+              </button>
+              {currentPath && pendingPath !== currentPath && (
+                <span className="text-xs text-subtext0">
+                  {t('settings.storage.restartHint', 'Reinicia para reindexar la nueva carpeta si cambias la ruta.')}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {error && <p className="text-xs text-red">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * Attachments stats section
+ */
+function AttachmentsStatsSection() {
+  const { t } = useTranslation();
+  const [stats, setStats] = useState<{ totalAttachments: number; totalSize: number; orphanedCount: number } | null>(null);
+  const [isCleaning, setIsCleaning] = useState(false);
+  const [cleanResult, setCleanResult] = useState<{ cleaned: number } | null>(null);
+
+  // Load stats on mount
+  useEffect(() => {
+    loadStats();
+  }, []);
+
+  const loadStats = async () => {
+    try {
+      const result = await window.electron.attachments.getStats();
+      if (result.success && result.totalAttachments !== undefined && result.totalSize !== undefined && result.orphanedCount !== undefined) {
+        setStats({
+          totalAttachments: result.totalAttachments,
+          totalSize: result.totalSize,
+          orphanedCount: result.orphanedCount,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load attachment stats:', error);
+    }
+  };
+
+  const handleCleanOrphans = async () => {
+    setIsCleaning(true);
+    setCleanResult(null);
+    
+    try {
+      const result = await window.electron.attachments.cleanOrphans();
+      if (result.success && result.cleaned !== undefined) {
+        setCleanResult({ cleaned: result.cleaned });
+        // Reload stats after cleaning
+        await loadStats();
+      }
+    } catch (error) {
+      console.error('Failed to clean orphaned attachments:', error);
+    } finally {
+      setIsCleaning(false);
+    }
+  };
+
+  const formatSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+  };
+
+  return (
+    <div className="pt-4 border-t border-surface0">
+      <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+        <Paperclip size={16} />
+        Attachments
+      </h3>
+      
+      {/* Stats */}
+      {stats && (
+        <div className="bg-surface0 rounded-lg p-3 mb-4 space-y-2">
+          <div className="flex items-center gap-2 text-sm">
+            <FileText size={14} className="text-blue" />
+            <span className="text-subtext1">Total attachments:</span>
+            <span className="text-text font-medium">{stats.totalAttachments}</span>
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-subtext1 ml-5">Space used:</span>
+            <span className="text-text font-medium">{formatSize(stats.totalSize)}</span>
+          </div>
+          {stats.orphanedCount > 0 && (
+            <div className="flex items-center gap-2 text-sm">
+              <AlertTriangle size={14} className="text-yellow" />
+              <span className="text-subtext1">Orphaned files:</span>
+              <span className="text-yellow font-medium">{stats.orphanedCount}</span>
+            </div>
+          )}
+        </div>
+      )}
+      
+      {/* Clean orphans button */}
+      {stats && stats.orphanedCount > 0 && (
+        <>
+          <button
+            onClick={handleCleanOrphans}
+            disabled={isCleaning}
+            className={`
+              flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors
+              ${isCleaning 
+                ? 'bg-surface1 text-subtext0 cursor-not-allowed' 
+                : 'bg-yellow text-base hover:bg-peach'
+              }
+            `}
+          >
+            <AlertTriangle size={16} />
+            {isCleaning ? 'Cleaning...' : 'Clean Orphaned Attachments'}
+          </button>
+          
+          {cleanResult && (
+            <p className="text-sm text-green mt-2">
+              ✅ Cleaned {cleanResult.cleaned} orphaned attachment{cleanResult.cleaned !== 1 ? 's' : ''}
+            </p>
+          )}
+        </>
+      )}
+      
+      <p className="text-xs text-subtext0 mt-3">
+        Attachments are files stored in .assets folders next to your notes. Orphaned files are database entries for files that no longer exist on disk.
+      </p>
     </div>
   );
 }
@@ -896,6 +1137,9 @@ function AITab() {
           {t('settings.ai.indexingHelp')}
         </p>
       </div>
+
+      {/* Attachments Stats */}
+      <AttachmentsStatsSection />
       
       {/* Refresh models button */}
       <div className="pt-4 border-t border-surface0">
@@ -920,6 +1164,13 @@ function AITab() {
  */
 function AboutTab() {
   const { t } = useTranslation();
+  const [helpModalOpen, setHelpModalOpen] = useState(false);
+  const [helpSection, setHelpSection] = useState<'keybindings' | 'vim'>('keybindings');
+
+  const openHelp = (section: 'keybindings' | 'vim') => {
+    setHelpSection(section);
+    setHelpModalOpen(true);
+  };
   
   return (
     <div className="space-y-4">
@@ -945,6 +1196,38 @@ function AboutTab() {
           {t('settings.about.baseTheme')}
         </p>
       </div>
+
+      <div className="pt-4 border-t border-surface0 space-y-2">
+        <h3 className="text-sm font-medium flex items-center gap-2">
+          <Key size={16} />
+          <span>Help / Ayuda</span>
+        </h3>
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={() => openHelp('keybindings')}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-surface1 hover:border-surface2 hover:bg-surface0 transition-colors text-sm"
+          >
+            <Key size={14} />
+            <span>Keybindings (EN/ES)</span>
+          </button>
+          <button
+            onClick={() => openHelp('vim')}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-surface1 hover:border-surface2 hover:bg-surface0 transition-colors text-sm"
+          >
+            <Key size={14} />
+            <span>Vim Editor Cheatsheet (EN/ES)</span>
+          </button>
+        </div>
+        <p className="text-xs text-subtext0">
+          Opens the help modal with keyboard shortcuts and Vim commands. // Abre el modal de ayuda con atajos y comandos Vim.
+        </p>
+      </div>
+
+      <HelpModal 
+        isOpen={helpModalOpen} 
+        onClose={() => setHelpModalOpen(false)}
+        defaultSection={helpSection}
+      />
     </div>
   );
 }
@@ -1005,6 +1288,7 @@ export function SettingsModal() {
     { id: 'ai', label: t('settings.tabs.ai'), icon: Brain },
     { id: 'editor', label: t('settings.tabs.editor'), icon: Type },
     { id: 'language', label: t('settings.tabs.language'), icon: Globe },
+      { id: 'storage', label: t('settings.tabs.storage'), icon: Folder },
     { id: 'about', label: t('settings.tabs.about'), icon: Info },
   ];
   
@@ -1062,6 +1346,7 @@ export function SettingsModal() {
               {activeTab === 'ai' && <AITab />}
               {activeTab === 'editor' && <EditorTab />}
               {activeTab === 'language' && <LanguageTab />}
+                {activeTab === 'storage' && <StorageTab />}
               {activeTab === 'about' && <AboutTab />}
             </div>
           </div>

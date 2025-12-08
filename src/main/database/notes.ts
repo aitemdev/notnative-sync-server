@@ -1,12 +1,20 @@
 import Database from 'better-sqlite3';
+import * as fs from 'fs';
+import * as path from 'path';
 import { dateToSqliteTimestamp, sqliteTimestampToDate } from './connection';
 import type { NoteMetadata, Note, NoteSearchResult } from '../../shared/types';
+import type { AttachmentsDatabase } from './attachments';
 
 export class NotesDatabase {
   private db: Database.Database;
+  private attachmentsDb?: AttachmentsDatabase;
 
   constructor(db: Database.Database) {
     this.db = db;
+  }
+
+  setAttachmentsDatabase(attachmentsDb: AttachmentsDatabase): void {
+    this.attachmentsDb = attachmentsDb;
   }
 
   // ============== CREATE ==============
@@ -162,11 +170,36 @@ export class NotesDatabase {
   // ============== DELETE ==============
   
   deleteNote(id: number): void {
+    // Get note info first to access path
+    const note = this.getNoteById(id);
+    
+    if (note && this.attachmentsDb) {
+      // Delete attachment records from database
+      this.attachmentsDb.deleteAttachmentsByNote(note.path);
+      
+      // Delete physical .assets folder
+      const noteName = path.basename(note.path, '.md');
+      const noteDir = path.dirname(note.path);
+      const assetsDir = path.join(noteDir, `${noteName}.assets`);
+      
+      if (fs.existsSync(assetsDir)) {
+        fs.rmSync(assetsDir, { recursive: true, force: true });
+      }
+    }
+    
+    // Delete note from database
     this.db.prepare('DELETE FROM notes WHERE id = ?').run(id);
   }
 
   deleteNoteByPath(path: string): void {
-    this.db.prepare('DELETE FROM notes WHERE path = ?').run(path);
+    // Get note by path first
+    const note = this.getNoteByPath(path);
+    if (note) {
+      this.deleteNote(note.id);
+    } else {
+      // Fallback if note not found
+      this.db.prepare('DELETE FROM notes WHERE path = ?').run(path);
+    }
   }
 
   // ============== STATS ==============

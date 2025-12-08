@@ -1,25 +1,30 @@
-import { ipcMain, BrowserWindow, app, nativeTheme } from 'electron';
+import { ipcMain, BrowserWindow, app, nativeTheme, dialog, shell } from 'electron';
 import Database from 'better-sqlite3';
 import path from 'path';
+import fs from 'fs';
 import { IPC_CHANNELS } from '../../shared/types/ipc';
 import { NotesDirectory } from '../files/notes-directory';
 import { NoteFile } from '../files/note-file';
 import { NotesDatabase } from '../database/notes';
 import { TagsDatabase } from '../database/tags';
+import { AttachmentsDatabase } from '../database/attachments';
 import { InlinePropertiesDatabase } from '../database/inline-properties';
-import { indexNote, semanticSearch, reindexAllNotes, getIndexingStats, deleteEmbeddings } from '../database/embeddings';
+import { indexNote, semanticSearch, reindexAllNotes, getIndexingStats, deleteEmbeddings, deleteEmbeddingsMatching } from '../database/embeddings';
 import { setEmbeddingModel, getEmbeddingModel, setAIModel, getAIModel, getApiKey as getClientApiKey, initAIClient, getAIClient } from '../ai/client';
 import { getAllModels } from '../ai/models';
 import { createQuickNoteWindow, closeQuickNoteWindow } from '../windows/quicknote-window';
 import { getMainWindow } from '../windows/main-window';
 import { APP_NAME, APP_VERSION, AI_EMBEDDING_MODEL, AI_DEFAULT_MODEL } from '../../shared/constants';
-import { getApiKey, setApiKey, hasApiKey } from '../settings/store';
-import fs from 'fs';
+import { getApiKey, setApiKey, hasApiKey, getSettings, updateSettings, AppSettings } from '../settings/store';
 
 export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirectory): void {
   const notesDb = new NotesDatabase(db);
   const tagsDb = new TagsDatabase(db);
   const propsDb = new InlinePropertiesDatabase(db);
+  const attachmentsDb = new AttachmentsDatabase(db);
+
+  // Link attachments database to notes database for cascade deletion
+  notesDb.setAttachmentsDatabase(attachmentsDb);
 
   // ============== NOTES ==============
 
@@ -143,7 +148,7 @@ export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirect
   // ============== IMAGES (EDITOR) ==============
   ipcMain.handle(IPC_CHANNELS['images:save'], async (_event, noteId: number, fileName: string, data: Buffer | ArrayBuffer | Uint8Array) => {
     if (!noteId) {
-      throw new Error('noteId is required to save an image');
+      throw new Error('noteId is required to save a file');
     }
 
     const metadata = notesDb.getNoteById(noteId);
@@ -151,25 +156,22 @@ export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirect
       throw new Error(`Note with id ${noteId} not found`);
     }
 
-    // Validate extension
+    // Get the original extension (keep it as-is for all file types)
     const ext = (path.extname(fileName) || '').toLowerCase();
-    const allowed = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
-    const safeExt = allowed.includes(ext) ? ext : '.png';
 
-    // Generate a safe filename
-    const baseName = path.basename(fileName, path.extname(fileName)).replace(/[^a-zA-Z0-9-_]/g, '_').slice(0, 50) || 'image';
-    const unique = `${baseName}-${Date.now()}`;
+    // Generate a safe filename (preserve original extension)
+    const baseName = path.basename(fileName, path.extname(fileName)).replace(/[^a-zA-Z0-9-_]/g, '_').slice(0, 50) || 'file';
+    const unique = `${baseName}-${Date.now()}${ext}`;
 
     // Save in note's assets directory
     const noteFile = NoteFile.open(metadata.path);
     const assetsDir = noteFile.ensureAssetsDirectory();
-    const targetName = `${unique}${safeExt}`;
-    const targetPath = path.join(assetsDir, targetName);
+    const targetPath = path.join(assetsDir, unique);
 
     const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
     fs.writeFileSync(targetPath, buffer);
 
-    // Return relative path from the note file location to the image
+    // Return relative path from the note file location to the file
     const relativePath = path.relative(path.dirname(metadata.path), targetPath);
     return { relativePath };
   });
@@ -311,6 +313,24 @@ export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirect
     };
   });
 
+  ipcMain.handle(IPC_CHANNELS['app:get-doc-path'], async (_, fileName: string) => {
+    // In dev, docs are in project root; in production they're in app.asar or resources
+    const docPath = app.isPackaged
+      ? path.join(process.resourcesPath, fileName)
+      : path.join(app.getAppPath(), fileName);
+    
+    console.log('📄 Getting doc path for:', fileName);
+    console.log('📄 Resolved path:', docPath);
+    console.log('📄 File exists:', fs.existsSync(docPath));
+    
+    if (!fs.existsSync(docPath)) {
+      console.error('📄 Doc file not found:', docPath);
+      throw new Error(`Documentation file not found: ${fileName}`);
+    }
+    
+    return docPath;
+  });
+
   ipcMain.handle(IPC_CHANNELS['app:get-theme'], async () => {
     return nativeTheme.themeSource;
   });
@@ -320,13 +340,87 @@ export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirect
   });
 
   ipcMain.handle(IPC_CHANNELS['app:get-settings'], async () => {
-    // TODO: Implement settings storage
-    return {};
+    return getSettings();
   });
 
-  ipcMain.handle(IPC_CHANNELS['app:set-settings'], async (_, settings: Record<string, unknown>) => {
-    // TODO: Implement settings storage
-    console.log('Settings updated:', settings);
+  ipcMain.handle(IPC_CHANNELS['app:set-settings'], async (_event, settings: Partial<AppSettings>) => {
+    const oldSettings = getSettings();
+    const newSettings = updateSettings(settings);
+    
+    // If notesRoot changed, trigger migration
+    if (settings.notesRoot && oldSettings.notesRoot !== settings.notesRoot) {
+      const oldPath = oldSettings.notesRoot || path.join(app.getPath('documents'), 'NotNative Notes');
+      const newPath = settings.notesRoot;
+      
+      console.log(`📦 Notes path changed from ${oldPath} to ${newPath}`);
+      
+      // Check if old path exists and has content
+      if (fs.existsSync(oldPath)) {
+        try {
+          const oldContents = await fs.promises.readdir(oldPath);
+          const hasContent = oldContents.some(item => 
+            !item.startsWith('.') || ['.history', '.trash'].includes(item)
+          );
+          
+          if (hasContent) {
+            console.log('📦 Migrating notes to new location...');
+            
+            // Ensure new directory exists
+            await fs.promises.mkdir(newPath, { recursive: true });
+            
+            // Copy all contents recursively
+            const entries = await fs.promises.readdir(oldPath, { withFileTypes: true });
+            for (const entry of entries) {
+              const srcPath = path.join(oldPath, entry.name);
+              const destPath = path.join(newPath, entry.name);
+              
+              if (entry.isDirectory()) {
+                await fs.promises.cp(srcPath, destPath, { recursive: true });
+              } else {
+                await fs.promises.copyFile(srcPath, destPath);
+              }
+            }
+            
+            console.log('✅ Notes migrated successfully');
+          }
+        } catch (error) {
+          console.error('❌ Error migrating notes:', error);
+          throw new Error(`Failed to migrate notes: ${error}`);
+        }
+      }
+    }
+    
+    return newSettings;
+  });
+
+  // ============== DIALOGS ==============
+  ipcMain.handle(IPC_CHANNELS['dialog:open-directory'], async () => {
+    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0];
+  });
+
+  // ============== SHELL ==============
+  ipcMain.handle(IPC_CHANNELS['shell:open-path'], async (_event, filePath: string) => {
+    try {
+      const result = await shell.openPath(filePath);
+      if (result) {
+        // openPath returns empty string on success, error message on failure
+        throw new Error(result);
+      }
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to open path:', filePath, error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS['shell:show-item-in-folder'], async (_event, filePath: string) => {
+    try {
+      shell.showItemInFolder(filePath);
+    } catch (error) {
+      console.error('Failed to show item in folder:', filePath, error);
+    }
   });
 
   // ============== WINDOW ==============
@@ -366,6 +460,53 @@ export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirect
     return notesDir.root;
   });
 
+  ipcMain.handle(IPC_CHANNELS['files:get-size'], async (_event, filePath: string, notePath?: string) => {
+    try {
+      if (!filePath) throw new Error('filePath is required');
+
+      let target = filePath;
+      const isAbsolute = path.isAbsolute(filePath) || /^[a-zA-Z]:[\\/]/.test(filePath);
+
+      if (!isAbsolute) {
+        if (!notePath) throw new Error('notePath is required for relative paths');
+        const baseDir = path.dirname(notePath);
+        target = path.join(baseDir, filePath);
+      }
+
+      const stats = await fs.promises.stat(target);
+      if (!stats.isFile()) throw new Error('Not a file');
+
+      return { success: true, size: stats.size, path: target };
+    } catch (error) {
+      console.error('Failed to get file size:', filePath, error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS['files:save-as'], async (_event, sourcePath: string) => {
+    try {
+      if (!sourcePath || !fs.existsSync(sourcePath)) {
+        throw new Error('Source file not found');
+      }
+
+      const defaultName = path.basename(sourcePath);
+      const result = await dialog.showSaveDialog({
+        title: 'Guardar archivo',
+        defaultPath: defaultName,
+      });
+
+      if (result.canceled || !result.filePath) {
+        return { success: false, canceled: true };
+      }
+
+      await fs.promises.copyFile(sourcePath, result.filePath);
+      return { success: true, destination: result.filePath };
+    } catch (error) {
+      console.error('Failed to save file as:', sourcePath, error);
+      return { success: false, error: String(error) };
+    }
+  });
+
   // ============== EMBEDDINGS ==============
 
   ipcMain.handle(IPC_CHANNELS['embeddings:search'], async (_, query: string, limit?: number) => {
@@ -392,7 +533,6 @@ export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirect
   ipcMain.handle(IPC_CHANNELS['embeddings:reindex-all'], async () => {
     try {
       // First, clean up embeddings from excluded folders
-      const { deleteEmbeddingsMatching } = await import('../database/embeddings');
       const deletedHistory = deleteEmbeddingsMatching('/.history/');
       const deletedTrash = deleteEmbeddingsMatching('/.trash/');
       if (deletedHistory > 0 || deletedTrash > 0) {
@@ -487,6 +627,71 @@ export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirect
     } catch (error) {
       console.error('❌ Failed to set API key:', error);
       return { success: false, error: String(error) };
+    }
+  });
+
+  // ============== ATTACHMENTS ==============
+
+  ipcMain.handle(IPC_CHANNELS['attachments:open'], async (_, filePath: string) => {
+    try {
+      // Decode URL encoding (e.g., %20 -> space)
+      const decodedPath = decodeURIComponent(filePath);
+      console.log('📂 Opening attachment:', decodedPath);
+      
+      // Check if file exists
+      if (!fs.existsSync(decodedPath)) {
+        console.error('❌ File not found:', decodedPath);
+        return { success: false, error: 'Archivo no encontrado' };
+      }
+      
+      // shell.openPath returns a promise that resolves to an error string (empty if successful)
+      const errorMessage = await shell.openPath(decodedPath);
+      
+      if (errorMessage) {
+        console.error('❌ Failed to open file:', errorMessage);
+        return { success: false, error: errorMessage };
+      }
+      
+      console.log('✅ File opened successfully');
+      return { success: true };
+    } catch (error) {
+      console.error('❌ Exception opening attachment:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS['attachments:get-by-note'], async (_, noteName: string) => {
+    const note = notesDb.getNoteByName(noteName);
+    if (!note) {
+      return { success: false, error: 'Note not found', attachments: [] };
+    }
+    
+    const attachments = attachmentsDb.getAttachmentsByNote(note.path);
+    return { success: true, attachments };
+  });
+
+  ipcMain.handle(IPC_CHANNELS['attachments:search'], async (_, query: string, limit?: number) => {
+    const attachments = attachmentsDb.searchAttachmentsByName(query, limit);
+    return { success: true, attachments };
+  });
+
+  ipcMain.handle(IPC_CHANNELS['attachments:get-stats'], async () => {
+    const stats = attachmentsDb.getStats();
+    return {
+      success: true,
+      totalAttachments: stats.totalAttachments,
+      totalSize: stats.totalSize,
+      orphanedCount: stats.orphanedAttachments.length,
+    };
+  });
+
+  ipcMain.handle(IPC_CHANNELS['attachments:clean-orphans'], async () => {
+    try {
+      const cleaned = attachmentsDb.cleanOrphanedAttachments();
+      return { success: true, cleaned };
+    } catch (error) {
+      console.error('❌ Failed to clean orphaned attachments:', error);
+      return { success: false, error: String(error), cleaned: 0 };
     }
   });
 

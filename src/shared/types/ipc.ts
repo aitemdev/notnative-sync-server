@@ -79,6 +79,8 @@ export const IPC_CHANNELS = {
   'files:changed': 'files:changed',
   'files:get-notes-directory': 'files:get-notes-directory',
   'files:set-notes-directory': 'files:set-notes-directory',
+  'files:save-as': 'files:save-as',
+  'files:get-size': 'files:get-size',
   
   // ============== NOTE CONTENT ==============
   'note:content-updated': 'note:content-updated',
@@ -90,10 +92,18 @@ export const IPC_CHANNELS = {
 
   // ============== APP / SYSTEM ==============
   'app:get-info': 'app:get-info',
-  'app:get-settings': 'app:get-settings',
-  'app:set-settings': 'app:set-settings',
+    'app:get-settings': 'app:get-settings', // Ensure IPC channel names include app settings
+    'app:set-settings': 'app:set-settings', // Ensure IPC channel names include app settings
   'app:get-theme': 'app:get-theme',
   'app:set-theme': 'app:set-theme',
+  'app:get-doc-path': 'app:get-doc-path',
+
+  // Dialogs
+  'dialog:open-directory': 'dialog:open-directory',
+
+  // Shell
+  'shell:open-path': 'shell:open-path',
+  'shell:show-item-in-folder': 'shell:show-item-in-folder',
 
   // ============== WINDOWS ==============
   'window:quicknote-open': 'window:quicknote-open',
@@ -114,6 +124,13 @@ export const IPC_CHANNELS = {
 
   // ============== IMAGES (EDITOR) ==============
   'images:save': 'images:save',
+
+  // ============== ATTACHMENTS ==============
+  'attachments:open': 'attachments:open',
+  'attachments:get-by-note': 'attachments:get-by-note',
+  'attachments:search': 'attachments:search',
+  'attachments:get-stats': 'attachments:get-stats',
+  'attachments:clean-orphans': 'attachments:clean-orphans',
 
   // ============== MCP SERVER ==============
   'mcp:start': 'mcp:start',

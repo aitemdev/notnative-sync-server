@@ -2,21 +2,177 @@ import { useEffect, useRef, useCallback, useState, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { X, FileText } from 'lucide-react';
+import { X, FileText, FileImage, File, Paperclip, Download, Copy, Check } from 'lucide-react';
 import { useChatStore } from '../../stores/chat-store';
 import { useAppStore } from '../../stores/app-store';
 import type { ChatMessage } from '../../../shared/types';
 
-// Component to render content with wiki-links as clickable buttons
-function WikiLinkRenderer({ content, onNoteClick }: { content: string; onNoteClick?: (name: string) => void }) {
-  // Split content by wiki-links pattern [[note name]]
-  const parts: ReactNode[] = [];
-  const regex = /\[\[([^\]]+)\]\]/g;
-  let lastIndex = 0;
-  let match;
-  let key = 0;
+// Helper to get icon for file type
+function getFileIcon(fileName: string, mimeType?: string): JSX.Element {
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+  const isImage = mimeType?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext);
+  
+  if (isImage) return <FileImage className="w-4 h-4" />;
+  if (['pdf'].includes(ext)) return <FileText className="w-4 h-4" />;
+  if (['doc', 'docx', 'txt', 'md'].includes(ext)) return <FileText className="w-4 h-4" />;
+  return <File className="w-4 h-4" />;
+}
 
-  while ((match = regex.exec(content)) !== null) {
+// Helper to format file size
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+// Component to render attachment preview
+function AttachmentPreview({ fileName, filePath }: { fileName: string; filePath: string }) {
+  const [isImagePreview, setIsImagePreview] = useState(false);
+  const [showLightbox, setShowLightbox] = useState(false);
+  
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+  const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
+  
+  const truncatedName = fileName.length > 30 ? `${fileName.slice(0, 27)}...` : fileName;
+
+  const handleClick = async () => {
+    if (isImage) {
+      setShowLightbox(true);
+    } else {
+      // Open file in default application
+      console.log('🔗 Opening attachment:', filePath);
+      try {
+        const result = await window.electron.attachments?.open(filePath);
+        console.log('📂 Open result:', result);
+        if (!result?.success) {
+          console.error('❌ Failed to open attachment:', result?.error);
+          alert(`No se pudo abrir el archivo: ${result?.error || 'Error desconocido'}`);
+        }
+      } catch (error) {
+        console.error('❌ Error opening attachment:', error);
+        alert(`Error al abrir el archivo: ${error}`);
+      }
+    }
+  };
+
+  const handleDownload = async () => {
+    try {
+      // Use the save-as dialog
+      const result = await window.electron.files.saveAs(filePath);
+      if (result.success && !result.canceled) {
+        console.log('✅ File saved to:', result.destination);
+      }
+    } catch (error) {
+      console.error('❌ Error downloading attachment:', error);
+      alert(`Error al descargar el archivo: ${error}`);
+    }
+  };
+
+  if (isImage) {
+    return (
+      <>
+        <div 
+          className="inline-block max-w-xs my-2 cursor-pointer group"
+          onClick={handleClick}
+        >
+          <img 
+            src={`file://${filePath}`} 
+            alt={fileName}
+            className="rounded border-2 border-surface1 group-hover:border-lavender transition-colors max-h-48 object-contain"
+            onError={() => setIsImagePreview(false)}
+          />
+          <div className="text-xs text-subtext0 mt-1 flex items-center gap-1">
+            <Paperclip className="w-3 h-3" />
+            {truncatedName}
+          </div>
+        </div>
+        
+        {/* Lightbox modal */}
+        {showLightbox && (
+          <div 
+            className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+            onClick={() => setShowLightbox(false)}
+          >
+            <img 
+              src={`file://${filePath}`} 
+              alt={fileName}
+              className="max-w-full max-h-full object-contain"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <button
+              className="absolute top-4 right-4 text-white hover:text-red transition-colors"
+              onClick={() => setShowLightbox(false)}
+            >
+              <X className="w-8 h-8" />
+            </button>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  // Non-image files: show as button with download option
+  return (
+    <div className="inline-flex items-center gap-2 my-1">
+      <button
+        type="button"
+        onClick={handleClick}
+        className="inline-flex items-center gap-2 px-3 py-1.5 rounded bg-surface0 hover:bg-surface1 text-text border border-surface2 transition-colors text-sm"
+      >
+        {getFileIcon(fileName)}
+        <span className="font-medium">{truncatedName}</span>
+      </button>
+      <button
+        type="button"
+        onClick={handleDownload}
+        className="p-1.5 rounded bg-surface0 hover:bg-surface1 text-text border border-surface2 transition-colors"
+        title="Descargar archivo"
+      >
+        <Download className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
+
+// Component to render content with wiki-links and attachment links
+function WikiLinkRenderer({ content, onNoteClick }: { content: string; onNoteClick?: (name: string) => void }) {
+  // Split content by wiki-links [[note]] and attachment links [📎 file](attachment://path)
+  const parts: ReactNode[] = [];
+  
+  // Combined regex for both wiki-links and attachment links
+  const wikiLinkRegex = /\[\[([^\]]+)\]\]/g;
+  const attachmentRegex = /\[([^\]]+)\]\(attachment:\/\/([^)]+)\)/g;
+  
+  // Find all matches with their positions
+  const matches: Array<{ type: 'wiki' | 'attachment'; index: number; length: number; content: string; path?: string }> = [];
+  
+  let match;
+  while ((match = wikiLinkRegex.exec(content)) !== null) {
+    matches.push({
+      type: 'wiki',
+      index: match.index,
+      length: match[0].length,
+      content: match[1],
+    });
+  }
+  
+  while ((match = attachmentRegex.exec(content)) !== null) {
+    matches.push({
+      type: 'attachment',
+      index: match.index,
+      length: match[0].length,
+      content: match[1], // filename with emoji
+      path: match[2], // file path
+    });
+  }
+  
+  // Sort matches by position
+  matches.sort((a, b) => a.index - b.index);
+  
+  let lastIndex = 0;
+  let key = 0;
+  
+  for (const match of matches) {
     // Add text before the match as ReactMarkdown
     if (match.index > lastIndex) {
       const textBefore = content.slice(lastIndex, match.index);
@@ -60,25 +216,37 @@ function WikiLinkRenderer({ content, onNoteClick }: { content: string; onNoteCli
       key++;
     }
     
-    // Add the wiki-link as a button
-    const noteName = match[1];
-    parts.push(
-      <button
-        key={`link-${key}`}
-        type="button"
-        onClick={() => {
-          console.log('📄 Clicking wiki-link:', noteName);
-          onNoteClick?.(noteName);
-        }}
-        className="text-green hover:text-teal cursor-pointer font-medium hover:underline bg-transparent border-none p-0 mx-0.5 inline"
-        style={{ font: 'inherit' }}
-      >
-        📄 {noteName}
-      </button>
-    );
-    key++;
+    if (match.type === 'wiki') {
+      // Render wiki-link as button
+      const noteName = match.content;
+      parts.push(
+        <button
+          key={`link-${key}`}
+          type="button"
+          onClick={() => {
+            console.log('📄 Clicking wiki-link:', noteName);
+            onNoteClick?.(noteName);
+          }}
+          className="text-green hover:text-teal cursor-pointer font-medium hover:underline bg-transparent border-none p-0 mx-0.5 inline"
+          style={{ font: 'inherit' }}
+        >
+          📄 {noteName}
+        </button>
+      );
+    } else if (match.type === 'attachment' && match.path) {
+      // Render attachment preview
+      const fileName = match.content.replace(/^📎\s*/, ''); // Remove emoji prefix
+      parts.push(
+        <AttachmentPreview 
+          key={`attachment-${key}`}
+          fileName={fileName}
+          filePath={match.path}
+        />
+      );
+    }
     
-    lastIndex = regex.lastIndex;
+    key++;
+    lastIndex = match.index + match.length;
   }
   
   // Add remaining text as ReactMarkdown
@@ -123,7 +291,7 @@ function WikiLinkRenderer({ content, onNoteClick }: { content: string; onNoteCli
     );
   }
   
-  // If no wiki-links, just render markdown normally
+  // If no wiki-links or attachments, just render markdown normally
   if (parts.length === 0) {
     return (
       <ReactMarkdown 
@@ -710,11 +878,22 @@ interface MessageBubbleProps {
 
 function MessageBubble({ message, isStreaming, onNoteClick }: MessageBubbleProps) {
   const isUser = message.role === 'user';
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy:', error);
+    }
+  };
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`max-w-[85%] rounded-lg px-4 py-2.5 ${isStreaming ? 'animate-pulse' : ''} ${
+        className={`max-w-[85%] rounded-lg px-4 py-2.5 relative group ${isStreaming ? 'animate-pulse' : ''} ${
           isUser ? 'bg-mauve text-crust' : 'bg-surface0 text-text'
         }`}
       >
@@ -752,9 +931,26 @@ function MessageBubble({ message, isStreaming, onNoteClick }: MessageBubbleProps
           )}
         </div>
 
-        {/* Timestamp */}
-        <div className={`text-xs mt-1.5 opacity-60 ${isUser ? 'text-crust' : 'text-subtext0'}`}>
-          {formatTime(message.createdAt)}
+        {/* Timestamp and Copy button */}
+        <div className="flex items-center justify-between mt-1.5">
+          <div className={`text-xs opacity-60 ${isUser ? 'text-crust' : 'text-subtext0'}`}>
+            {formatTime(message.createdAt)}
+          </div>
+          
+          {/* Copy button (only for assistant messages) */}
+          {!isUser && (
+            <button
+              onClick={handleCopy}
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-surface1"
+              title={copied ? 'Copiado!' : 'Copiar mensaje'}
+            >
+              {copied ? (
+                <Check className="w-3.5 h-3.5 text-green" />
+              ) : (
+                <Copy className="w-3.5 h-3.5 text-subtext0" />
+              )}
+            </button>
+          )}
         </div>
       </div>
     </div>

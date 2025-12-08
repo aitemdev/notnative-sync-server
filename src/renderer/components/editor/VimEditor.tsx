@@ -129,10 +129,28 @@ export default function VimEditor({
       return insertText.length;
     };
 
-    const saveImagesAndInsert = async (files: File[], view: EditorView, position?: number) => {
+    const getFileIcon = (fileName: string): string => {
+      const ext = fileName.split('.').pop()?.toLowerCase() || '';
+      const iconMap: Record<string, string> = {
+        pdf: '📄',
+        doc: '📝', docx: '📝',
+        xls: '📊', xlsx: '📊',
+        ppt: '📊', pptx: '📊',
+        zip: '📦', rar: '📦', '7z': '📦', tar: '📦', gz: '📦',
+        mp3: '🎵', wav: '🎵', flac: '🎵', ogg: '🎵',
+        mp4: '🎬', avi: '🎬', mkv: '🎬', mov: '🎬', webm: '🎬',
+        txt: '📃', md: '📃',
+        js: '📜', ts: '📜', jsx: '📜', tsx: '📜',
+        py: '🐍', java: '☕', cpp: '⚙️', c: '⚙️',
+        html: '🌐', css: '🎨', json: '🔧',
+      };
+      return iconMap[ext] || '📎';
+    };
+
+    const saveFilesAndInsert = async (files: File[], view: EditorView, position?: number) => {
       const currentNoteId = noteIdRef.current;
       if (!currentNoteId) {
-        console.warn('Skipping image insert: no note id');
+        console.warn('Skipping file insert: no note id');
         return;
       }
 
@@ -140,16 +158,41 @@ export default function VimEditor({
 
       for (const file of files) {
         try {
+          // Check file size (max 50MB)
+          const maxSize = 50 * 1024 * 1024;
+          if (file.size > maxSize) {
+            console.warn(`File ${file.name} exceeds 50MB limit, skipping`);
+            continue;
+          }
+
+          // Block executables
+          const ext = file.name.split('.').pop()?.toLowerCase() || '';
+          const blockedExts = ['exe', 'sh', 'bat', 'cmd', 'app', 'dmg', 'msi'];
+          if (blockedExts.includes(ext)) {
+            console.warn(`File type .${ext} is not allowed, skipping ${file.name}`);
+            continue;
+          }
+
           const arrayBuffer = await file.arrayBuffer();
           const data = new Uint8Array(arrayBuffer);
-          const response = await window.electron.images.save(currentNoteId, file.name || 'image', data);
+          const response = await window.electron.images.save(currentNoteId, file.name || 'file', data);
           const relPath = response.relativePath.replace(/\\/g, '/');
-          const alt = (file.name || 'image').replace(/\.[^.]+$/, '') || 'image';
-          const markdown = `![${alt}](${relPath})`;
+          
+          // If it's an image, use image syntax, otherwise use link with icon
+          const isImage = file.type.startsWith('image/');
+          let markdown: string;
+          if (isImage) {
+            const alt = (file.name || 'image').replace(/\.[^.]+$/, '') || 'image';
+            markdown = `![${alt}](${relPath})`;
+          } else {
+            const icon = getFileIcon(file.name);
+            markdown = `[${icon} ${file.name}](${relPath})`;
+          }
+          
           const inserted = insertMarkdownAt(view, markdown, cursor);
           cursor += inserted;
         } catch (error) {
-          console.error('Error saving image', error);
+          console.error('Error saving file', error);
         }
       }
     };
@@ -281,19 +324,23 @@ export default function VimEditor({
           return false;
         },
         paste: (event, view) => {
-          const files = Array.from(event.clipboardData?.files || []).filter(file => file.type.startsWith('image/'));
+          const files = Array.from(event.clipboardData?.files || []);
           if (!files.length) return false;
           event.preventDefault();
-          void saveImagesAndInsert(files, view);
+          event.stopPropagation();
+          void saveFilesAndInsert(files, view);
           return true;
         },
         drop: (event, view) => {
-          const files = Array.from(event.dataTransfer?.files || []).filter(file => file.type.startsWith('image/'));
-          if (!files.length) return false;
           event.preventDefault();
+          event.stopPropagation();
+          
+          const files = Array.from(event.dataTransfer?.files || []);
+          if (!files.length) return false;
+          
           const position = view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? view.state.selection.main.from;
           view.dispatch({ selection: { anchor: position } });
-          void saveImagesAndInsert(files, view, position);
+          void saveFilesAndInsert(files, view, position);
           return true;
         },
       }),

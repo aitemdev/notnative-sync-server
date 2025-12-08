@@ -1,10 +1,13 @@
 import chokidar, { FSWatcher } from 'chokidar';
 import { BrowserWindow } from 'electron';
 import Database from 'better-sqlite3';
+import * as fs from 'fs';
+import * as path from 'path';
 import { NotesDirectory } from './notes-directory';
 import { NoteFile } from './note-file';
 import { NotesDatabase } from '../database/notes';
 import { TagsDatabase } from '../database/tags';
+import { AttachmentsDatabase } from '../database/attachments';
 import { indexNote as indexEmbeddings, deleteEmbeddings } from '../database/embeddings';
 import { IPC_CHANNELS } from '../../shared/types/ipc';
 import { FILE_WATCH_DEBOUNCE } from '../../shared/constants';
@@ -16,9 +19,11 @@ export class NotesWatcher {
   private mainWindow: BrowserWindow;
   private notesDb: NotesDatabase;
   private tagsDb: TagsDatabase;
+  private attachmentsDb: AttachmentsDatabase;
   
   // Debounce tracking
   private pendingChanges: Map<string, NodeJS.Timeout> = new Map();
+  private pendingAttachmentChanges: Map<string, NodeJS.Timeout> = new Map();
 
   constructor(
     db: Database.Database,
@@ -30,6 +35,10 @@ export class NotesWatcher {
     this.mainWindow = mainWindow;
     this.notesDb = new NotesDatabase(db);
     this.tagsDb = new TagsDatabase(db);
+    this.attachmentsDb = new AttachmentsDatabase(db);
+    
+    // Link attachments database to notes database for cascade deletion
+    this.notesDb.setAttachmentsDatabase(this.attachmentsDb);
   }
 
   /**
@@ -63,9 +72,9 @@ export class NotesWatcher {
     });
 
     this.watcher
-      .on('add', (filePath: string) => this.debouncedHandle('add', filePath))
-      .on('change', (filePath: string) => this.debouncedHandle('change', filePath))
-      .on('unlink', (filePath: string) => this.debouncedHandle('unlink', filePath))
+      .on('add', (filePath: string) => this.handleFileAdd(filePath))
+      .on('change', (filePath: string) => this.handleFileChange(filePath))
+      .on('unlink', (filePath: string) => this.handleFileUnlink(filePath))
       .on('addDir', (dirPath: string) => this.handleAddDir(dirPath))
       .on('unlinkDir', (dirPath: string) => this.handleUnlinkDir(dirPath))
       .on('error', (error: unknown) => console.error('❌ Watcher error:', error));
@@ -88,8 +97,71 @@ export class NotesWatcher {
       }
       this.pendingChanges.clear();
       
+      for (const timeout of this.pendingAttachmentChanges.values()) {
+        clearTimeout(timeout);
+      }
+      this.pendingAttachmentChanges.clear();
+      
       console.log('✅ File watcher stopped');
     }
+  }
+
+  /**
+   * Router for file add events
+   */
+  private handleFileAdd(filePath: string): void {
+    if (this.isAttachmentFile(filePath)) {
+      this.debouncedHandleAttachment('add', filePath);
+    } else if (this.notesDir.isNoteFile(filePath)) {
+      this.debouncedHandle('add', filePath);
+    }
+  }
+
+  /**
+   * Router for file change events
+   */
+  private handleFileChange(filePath: string): void {
+    if (this.isAttachmentFile(filePath)) {
+      this.debouncedHandleAttachment('change', filePath);
+    } else if (this.notesDir.isNoteFile(filePath)) {
+      this.debouncedHandle('change', filePath);
+    }
+  }
+
+  /**
+   * Router for file unlink events
+   */
+  private handleFileUnlink(filePath: string): void {
+    if (this.isAttachmentFile(filePath)) {
+      this.debouncedHandleAttachment('unlink', filePath);
+    } else if (this.notesDir.isNoteFile(filePath)) {
+      this.debouncedHandle('unlink', filePath);
+    }
+  }
+
+  /**
+   * Check if a file is an attachment (inside .assets folder)
+   */
+  private isAttachmentFile(filePath: string): boolean {
+    const parts = filePath.split(path.sep);
+    return parts.some(part => part.endsWith('.assets'));
+  }
+
+  /**
+   * Get note path from attachment file path
+   */
+  private getNotePathFromAttachment(attachmentPath: string): string | null {
+    const parts = attachmentPath.split(path.sep);
+    const assetsIndex = parts.findIndex(part => part.endsWith('.assets'));
+    
+    if (assetsIndex === -1) return null;
+    
+    const assetsFolderName = parts[assetsIndex];
+    const noteName = assetsFolderName.slice(0, -7); // Remove '.assets'
+    
+    // Reconstruct note path
+    const noteParts = [...parts.slice(0, assetsIndex), `${noteName}.md`];
+    return noteParts.join(path.sep);
   }
 
   /**
@@ -123,6 +195,36 @@ export class NotesWatcher {
     }, FILE_WATCH_DEBOUNCE);
 
     this.pendingChanges.set(filePath, timeout);
+  }
+
+  /**
+   * Debounce attachment file changes
+   */
+  private debouncedHandleAttachment(type: 'add' | 'change' | 'unlink', filePath: string): void {
+    // Clear existing timeout for this file
+    const existing = this.pendingAttachmentChanges.get(filePath);
+    if (existing) {
+      clearTimeout(existing);
+    }
+
+    // Set new timeout (500ms for attachments)
+    const timeout = setTimeout(() => {
+      this.pendingAttachmentChanges.delete(filePath);
+      
+      switch (type) {
+        case 'add':
+          this.handleAttachmentAdd(filePath);
+          break;
+        case 'change':
+          this.handleAttachmentChange(filePath);
+          break;
+        case 'unlink':
+          this.handleAttachmentUnlink(filePath);
+          break;
+      }
+    }, 500); // 500ms debounce for attachments
+
+    this.pendingAttachmentChanges.set(filePath, timeout);
   }
 
   /**
@@ -189,6 +291,105 @@ export class NotesWatcher {
   private handleUnlinkDir(dirPath: string): void {
     console.log(`📁 Folder deleted: ${dirPath}`);
     this.notifyRenderer('unlinkDir', dirPath);
+  }
+
+  /**
+   * Handle new attachment file added
+   */
+  private handleAttachmentAdd(filePath: string): void {
+    console.log(`📎 New attachment detected: ${filePath}`);
+
+    try {
+      const notePath = this.getNotePathFromAttachment(filePath);
+      if (!notePath) {
+        console.warn(`⚠️ Could not determine note path for attachment: ${filePath}`);
+        return;
+      }
+
+      const stats = fs.statSync(filePath);
+      const fileName = path.basename(filePath);
+      const mimeType = this.getMimeTypeFromExtension(fileName);
+
+      // Check if attachment already exists
+      const existing = this.attachmentsDb.getAttachmentByPath(filePath);
+      if (!existing) {
+        this.attachmentsDb.addAttachment(notePath, fileName, filePath, stats.size, mimeType);
+        console.log(`✅ Attachment indexed: ${fileName}`);
+      }
+    } catch (error) {
+      console.error(`❌ Error indexing attachment: ${filePath}`, error);
+    }
+  }
+
+  /**
+   * Handle attachment file changed (e.g., replaced)
+   */
+  private handleAttachmentChange(filePath: string): void {
+    console.log(`📎 Attachment changed: ${filePath}`);
+
+    try {
+      const notePath = this.getNotePathFromAttachment(filePath);
+      if (!notePath) return;
+
+      // Delete and re-add to update metadata
+      this.attachmentsDb.deleteAttachmentByPath(filePath);
+      
+      const stats = fs.statSync(filePath);
+      const fileName = path.basename(filePath);
+      const mimeType = this.getMimeTypeFromExtension(fileName);
+      
+      this.attachmentsDb.addAttachment(notePath, fileName, filePath, stats.size, mimeType);
+      console.log(`✅ Attachment updated: ${fileName}`);
+    } catch (error) {
+      console.error(`❌ Error updating attachment: ${filePath}`, error);
+    }
+  }
+
+  /**
+   * Handle attachment file deleted
+   */
+  private handleAttachmentUnlink(filePath: string): void {
+    console.log(`📎 Attachment deleted: ${filePath}`);
+
+    try {
+      this.attachmentsDb.deleteAttachmentByPath(filePath);
+      console.log(`✅ Attachment removed from database: ${path.basename(filePath)}`);
+    } catch (error) {
+      console.error(`❌ Error deleting attachment: ${filePath}`, error);
+    }
+  }
+
+  /**
+   * Get MIME type from file extension
+   */
+  private getMimeTypeFromExtension(fileName: string): string | null {
+    const ext = path.extname(fileName).toLowerCase();
+    
+    const mimeTypes: Record<string, string> = {
+      // Images
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.svg': 'image/svg+xml',
+      // Documents
+      '.pdf': 'application/pdf',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.xls': 'application/vnd.ms-excel',
+      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      // Archives
+      '.zip': 'application/zip',
+      '.rar': 'application/x-rar-compressed',
+      '.7z': 'application/x-7z-compressed',
+      // Text
+      '.txt': 'text/plain',
+      '.md': 'text/markdown',
+      '.json': 'application/json',
+    };
+
+    return mimeTypes[ext] || null;
   }
 
   /**

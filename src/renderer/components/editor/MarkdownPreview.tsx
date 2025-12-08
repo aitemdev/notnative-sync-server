@@ -63,16 +63,6 @@ const baseMarkdownComponents = {
   pre: ({ children }: { children?: ReactNode }) => (
     <pre className="mb-4 rounded-lg overflow-hidden">{children}</pre>
   ),
-  a: ({ href, children }: { href?: string; children?: ReactNode }) => (
-    <a 
-      href={href} 
-      target="_blank" 
-      rel="noopener noreferrer" 
-      className="text-lavender hover:text-mauve underline underline-offset-2 transition-colors"
-    >
-      {children}
-    </a>
-  ),
   strong: ({ children }: { children?: ReactNode }) => (
     <strong className="font-bold text-text">{children}</strong>
   ),
@@ -129,10 +119,10 @@ function WikiLinkContent({
   onNoteClick: (name: string) => void;
   components: Components;
 }) {
-  // Pre-process content to fix image URLs with spaces
+  // Pre-process content to fix URLs with spaces for images and links
   // Markdown parsers break on spaces in URLs, so we need to encode them
-  // Match ![alt](path with spaces) and encode spaces in the path
-  const fixedContent = content.replace(
+  // Images
+  let fixedContent = content.replace(
     /!\[([^\]]*)\]\(([^)]+)\)/g,
     (match, alt, url) => {
       // Don't modify URLs that are already encoded or are http(s)
@@ -142,6 +132,19 @@ function WikiLinkContent({
       // Encode spaces in the URL
       const encodedUrl = url.replace(/ /g, '%20');
       return `![${alt}](${encodedUrl})`;
+    }
+  );
+
+  // Regular links
+  fixedContent = fixedContent.replace(
+    /\[([^\]]*)\]\(([^)]+)\)/g,
+    (match, text, url) => {
+      // Skip if already encoded or external
+      if (url.includes('%20') || url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+        return match;
+      }
+      const encodedUrl = url.replace(/ /g, '%20');
+      return `[${text}](${encodedUrl})`;
     }
   );
 
@@ -284,6 +287,100 @@ const MarkdownPreview = forwardRef<HTMLDivElement, MarkdownPreviewProps>(
             className="max-w-full h-auto rounded-lg my-4 shadow-lg"
             loading="lazy"
           />
+        );
+      },
+      a: ({ href, children }: { href?: string; children?: ReactNode }) => {
+        // Check if it's an external URL
+        const isExternal = href && (href.startsWith('http://') || href.startsWith('https://'));
+        
+        if (isExternal) {
+          return (
+            <a 
+              href={href} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="text-lavender hover:text-mauve underline underline-offset-2 transition-colors"
+            >
+              {children}
+            </a>
+          );
+        }
+        
+        // Extract text from children (could be string, array, or React elements)
+        const extractText = (node: ReactNode): string => {
+          if (typeof node === 'string') return node;
+          if (typeof node === 'number') return String(node);
+          if (Array.isArray(node)) return node.map(extractText).join('');
+          if (node && typeof node === 'object' && 'props' in node) {
+            return extractText((node as any).props?.children);
+          }
+          return '';
+        };
+        
+        const childText = extractText(children);
+        
+        // Check if it's a file attachment (has emoji prefix or is in .assets folder)
+        const isAttachment = href && (
+          href.includes('.assets/') || 
+          /^[📎📄📝📊📦🎵🎬📃📜🐍☕⚙️🌐🎨🔧]/.test(childText)
+        );
+        
+        if (isAttachment) {
+          // Prefer filename from href to avoid stray glyphs from markdown text
+          const hrefName = href ? decodeURIComponent(href).split(/[\\/]/).pop() || '' : '';
+          const match = childText.match(/^([📎📄📝📊📦🎵🎬📃📜🐍☕⚙️🌐🎨🔧])?\s*(.+)$/);
+          const filename = hrefName || match?.[2] || childText;
+          const ext = filename.includes('.') ? filename.split('.').pop()?.toUpperCase() : null;
+          
+          // Resolve the file path like images
+          const resolvedPath = href ? resolveImageSrc(href) : '';
+          // Convert local-file:// back to absolute path for shell.openPath
+          const absolutePath = resolvedPath?.startsWith('local-file://') 
+            ? decodeURIComponent(resolvedPath.replace('local-file://', ''))
+            : href || '';
+          
+          // Render as a button-like attachment (badge with extension + filename) and a Save action
+          return (
+            <div className="inline-flex items-center gap-2 flex-wrap my-1">
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  window.electron.shell.openPath(absolutePath).catch(err => {
+                    console.error('Failed to open attachment:', err);
+                  });
+                }}
+                className="inline-flex items-center gap-2 px-3 py-1.5 bg-surface0 hover:bg-surface1 border border-surface1 rounded-lg text-text hover:text-lavender transition-colors cursor-pointer text-sm"
+              >
+                <span className="px-2 py-0.5 rounded-full bg-surface1 border border-surface2 text-[11px] text-subtext0 uppercase tracking-wide">
+                  {ext || 'FILE'}
+                </span>
+                <span className="font-medium text-left whitespace-pre-wrap break-words">{filename}</span>
+              </button>
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  window.electron.files.saveAs(absolutePath).catch(err => {
+                    console.error('Failed to save attachment:', err);
+                  });
+                }}
+                className="px-2.5 py-1.5 text-xs rounded-lg border border-surface1 bg-surface0 hover:bg-surface1 text-subtext0 hover:text-text transition-colors"
+              >
+                Guardar
+              </button>
+            </div>
+          );
+        }
+        
+        // Regular internal link
+        return (
+          <a 
+            href={href} 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="text-lavender hover:text-mauve underline underline-offset-2 transition-colors"
+          >
+            {children}
+          </a>
         );
       },
     }), [resolveImageSrc]);

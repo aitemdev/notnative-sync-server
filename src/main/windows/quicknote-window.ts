@@ -1,10 +1,48 @@
 import { BrowserWindow, screen } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import http from 'http';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let quickNoteWindow: BrowserWindow | null = null;
+
+/**
+ * Wait for the dev server to be ready
+ */
+async function waitForDevServer(url: string, maxRetries = 50, delayMs = 300): Promise<void> {
+  // Initial delay to let Vite start
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const request = http.get(url, (res) => {
+          // Accept any 2xx or 3xx status code
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 400) {
+            resolve();
+          } else {
+            reject(new Error(`Server returned ${res.statusCode}`));
+          }
+        });
+        request.on('error', (err) => {
+          reject(err);
+        });
+        request.setTimeout(1000, () => {
+          request.destroy();
+          reject(new Error('Request timeout'));
+        });
+      });
+      return;
+    } catch (error) {
+      if (i === maxRetries - 1) {
+        console.error('❌ Dev server not ready after', maxRetries, 'attempts. Last error:', error);
+        throw new Error(`Dev server not ready after ${maxRetries} attempts: ${error}`);
+      }
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+}
 
 export async function createQuickNoteWindow(): Promise<BrowserWindow> {
   // If window already exists, focus it
@@ -55,7 +93,9 @@ export async function createQuickNoteWindow(): Promise<BrowserWindow> {
   const isDev = process.env.NODE_ENV === 'development';
   
   if (isDev) {
-    await quickNoteWindow.loadURL('http://localhost:5173/#/quicknote');
+    const devUrl = 'http://localhost:5173';
+    await waitForDevServer(devUrl);
+    await quickNoteWindow.loadURL(`${devUrl}/#/quicknote`);
   } else {
     await quickNoteWindow.loadFile(path.join(__dirname, '../renderer/index.html'), {
       hash: '/quicknote',

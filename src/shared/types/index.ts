@@ -198,3 +198,14 @@ export interface ModelInfo {
   isChat: boolean;
   isEmbedding: boolean;
 }
+
+// ============== ATTACHMENTS ==============
+export interface NoteAttachment {
+  id: number;
+  notePath: string;
+  fileName: string;
+  filePath: string;
+  fileSize: number;
+  mimeType: string | null;
+  createdAt: Date;
+}

@@ -1,10 +1,53 @@
 import { BrowserWindow, screen, shell } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import http from 'http';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let mainWindow: BrowserWindow | null = null;
+
+/**
+ * Wait for the dev server to be ready
+ */
+async function waitForDevServer(url: string, maxRetries = 50, delayMs = 300): Promise<void> {
+  console.log('⏳ Waiting for dev server at', url);
+  // Initial delay to let Vite start
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const request = http.get(url, (res) => {
+          // Accept any 2xx or 3xx status code
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 400) {
+            resolve();
+          } else {
+            reject(new Error(`Server returned ${res.statusCode}`));
+          }
+        });
+        request.on('error', (err) => {
+          reject(err);
+        });
+        request.setTimeout(1000, () => {
+          request.destroy();
+          reject(new Error('Request timeout'));
+        });
+      });
+      console.log('✅ Dev server is ready');
+      return;
+    } catch (error) {
+      if (i === maxRetries - 1) {
+        console.error('❌ Dev server not ready after', maxRetries, 'attempts. Last error:', error);
+        throw new Error(`Dev server not ready after ${maxRetries} attempts: ${error}`);
+      }
+      if (i % 5 === 0 && i > 0) {
+        console.log(`⏳ Still waiting for dev server... (attempt ${i + 1}/${maxRetries})`);
+      }
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+}
 
 export async function createMainWindow(): Promise<BrowserWindow> {
   // Get screen dimensions
@@ -45,7 +88,10 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   const isDev = process.env.NODE_ENV === 'development';
   
   if (isDev) {
-    await mainWindow.loadURL('http://localhost:5173');
+    const devUrl = 'http://localhost:5173';
+    console.log('⏳ Waiting for dev server...');
+    await waitForDevServer(devUrl);
+    await mainWindow.loadURL(devUrl);
   } else {
     await mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }

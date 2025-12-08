@@ -41,7 +41,7 @@ export const SEARCH_RESULTS_LIMIT = 50;
 export const SEMANTIC_SEARCH_LIMIT = 10;
 
 // Database
-export const DATABASE_VERSION = 11;
+export const DATABASE_VERSION = 12;
 export const DATABASE_FILENAME = 'notnative.db';
 
 // File watching

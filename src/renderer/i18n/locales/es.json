@@ -14,7 +14,8 @@
     "change": "Cambiar",
     "refresh": "Actualizar",
     "rename": "Renombrar",
-    "comingSoon": "Próximamente"
+    "comingSoon": "Próximamente",
+    "saving": "Guardando..."
   },
   "editor": {
     "noNoteSelected": "No hay nota seleccionada",
@@ -72,7 +73,8 @@
     "showSidebar": "Mostrar sidebar",
     "hideChat": "Ocultar chat",
     "showChat": "Mostrar chat",
-    "settings": "Configuración"
+    "settings": "Configuración",
+    "attachments": "Archivos adjuntos"
   },
   "editorModes": {
     "normal": "NORMAL",
@@ -88,6 +90,7 @@
       "ai": "IA & Búsqueda",
       "editor": "Editor",
       "language": "Idioma",
+      "storage": "Almacenamiento",
       "about": "Acerca de"
     },
     "appearance": {
@@ -146,6 +149,17 @@
       "spanish": "Español",
       "english": "English"
     },
+    "storage": {
+      "title": "Carpeta de notas",
+      "desc": "Por defecto se usa una carpeta interna segura. Puedes elegir otra si lo necesitas.",
+      "warning": "Las carpetas en red o nubes pueden ser lentas o inestables; úsalo bajo tu responsabilidad.",
+      "defaultPath": "Ruta por defecto",
+      "change": "Cambiar",
+      "pickError": "No se pudo seleccionar la carpeta",
+      "saveError": "No se pudo guardar la carpeta",
+      "loadError": "No se pudieron cargar los ajustes",
+      "restartHint": "Reinicia para reindexar la nueva carpeta si cambias la ruta."
+    },
     "about": {
       "description": "Una aplicación de notas con editor Vim, AI integrado y soporte para bases de datos.",
       "builtWith": "Construido con Electron, React, CodeMirror y Tailwind CSS.",
@@ -166,5 +180,12 @@
   "theme": {
     "dark": "Oscuro",
     "light": "Claro"
+  },
+  "attachments": {
+    "title": "Adjuntos",
+    "empty": "No hay archivos adjuntos",
+    "preview": "Vista previa",
+    "openExternal": "Abrir con app externa",
+    "delete": "Eliminar"
   }
 }

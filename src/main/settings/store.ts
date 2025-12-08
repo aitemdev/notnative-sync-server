@@ -12,6 +12,7 @@ export interface AppSettings {
   chatModel?: string;
   embeddingModel?: string;
   braveApiKey?: string;
+  notesRoot?: string;
 }
 
 const SETTINGS_FILE = 'settings.json';
@@ -44,6 +45,16 @@ export function loadSettings(): AppSettings {
 
   cachedSettings = {};
   return cachedSettings;
+}
+
+export function getSettings(): AppSettings {
+  return loadSettings();
+}
+
+export function updateSettings(partial: Partial<AppSettings>): AppSettings {
+  const merged = { ...loadSettings(), ...partial };
+  saveSettings(merged);
+  return merged;
 }
 
 export function saveSettings(settings: AppSettings): void {

@@ -12,6 +12,7 @@ import { NotesDirectory } from './files/notes-directory';
 import { NotesWatcher } from './files/watcher';
 import { MCPServer } from './mcp/server';
 import { SystemTray } from './tray/system-tray';
+import { loadSettings } from './settings/store';
 
 // Load environment variables from .env file
 config();
@@ -120,8 +121,10 @@ async function initialize() {
   await initDatabase(userDataPath);
 
   // Initialize notes directory
+  const settings = loadSettings();
   const documentsPath = app.getPath('documents');
-  const notesPath = path.join(documentsPath, 'NotNative Notes');
+  const defaultNotesPath = path.join(documentsPath, 'NotNative Notes');
+  const notesPath = settings.notesRoot || defaultNotesPath;
   notesDir = new NotesDirectory(notesPath);
   await notesDir.ensureStructure();
 
@@ -158,7 +161,9 @@ function cleanup() {
   watcher?.stop();
   mcpServer?.stop();
   closeDatabase();
-  globalShortcut.unregisterAll();
+  if (app.isReady()) {
+    globalShortcut.unregisterAll();
+  }
 }
 
 // Handle app ready
@@ -199,7 +204,9 @@ app.on('quit', () => {
 
 // Handle will-quit
 app.on('will-quit', () => {
-  globalShortcut.unregisterAll();
+  if (app.isReady()) {
+    globalShortcut.unregisterAll();
+  }
 });
 
 // Handle SIGINT and SIGTERM (Ctrl+C in terminal)
