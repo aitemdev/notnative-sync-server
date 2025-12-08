@@ -13,6 +13,7 @@ import {
   FolderPlus,
   Trash2,
   GripVertical,
+  Pencil,
 } from 'lucide-react';
 import type { NoteMetadata } from '../../../shared/types';
 
@@ -54,7 +55,7 @@ export default function NotesList() {
     setSidebarNavActive,
     setSidebarNavSelectedIndex,
   } = useAppStore();
-  const { openNote, createNote, deleteNote, moveNote, loadNotes, loadFolders } = useNotes();
+  const { openNote, createNote, deleteNote, moveNote, renameNote, loadNotes, loadFolders } = useNotes();
   
   // Refs
   const listRef = useRef<HTMLDivElement>(null);
@@ -67,6 +68,11 @@ export default function NotesList() {
   const [showNewFolderInput, setShowNewFolderInput] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [newFolderParent, setNewFolderParent] = useState<string | null>(null);
+  
+  // Rename note state
+  const [renamingNote, setRenamingNote] = useState<NoteMetadata | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const renameInputRef = useRef<HTMLInputElement>(null);
   
   // Keyboard navigation uses global store state (sidebarNavActive, sidebarNavSelectedIndex)
   
@@ -134,10 +140,19 @@ export default function NotesList() {
     setSidebarNavActive(false);
     setSidebarNavSelectedIndex(-1);
     console.log('After set, sidebarNavActive:', useAppStore.getState().sidebarNavActive);
-    // Return focus to editor
+    // Return focus to editor or preview (if in preview-only mode)
     setTimeout(() => {
+      // First try the CodeMirror editor
       const editor = document.querySelector('.cm-content') as HTMLElement;
-      editor?.focus();
+      if (editor) {
+        editor.focus();
+        return;
+      }
+      // Fallback to preview pane (for preview-only mode)
+      const preview = document.querySelector('.prose-container') as HTMLElement;
+      if (preview) {
+        preview.focus();
+      }
     }, 50);
   }, [setSidebarNavActive, setSidebarNavSelectedIndex]);
 
@@ -155,6 +170,17 @@ export default function NotesList() {
     
     const handleKeyDown = (e: KeyboardEvent) => {
       if (showNewNoteInput || showNewFolderInput) return;
+      
+      // Don't capture keys when confirm dialog is open
+      if (confirmDialog.isOpen) return;
+      
+      // Don't capture keys when typing in an input or the search overlay
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+      
+      // Check if search overlay is open
+      const { searchOverlayOpen } = useAppStore.getState();
+      if (searchOverlayOpen) return;
       
       switch (e.key) {
         case 'ArrowDown':
@@ -224,12 +250,51 @@ export default function NotesList() {
           if (sidebarOpen) toggleSidebar();
           focusEditor();
           break;
+          
+        case 'Delete':
+          e.preventDefault();
+          const deleteItem = navItems[sidebarNavSelectedIndex];
+          if (deleteItem?.type === 'note' && deleteItem.note) {
+            const noteName = deleteItem.note.name;
+            setConfirmDialog({
+              isOpen: true,
+              title: t('common.confirm'),
+              message: t('notesList.confirmDeleteNote', { name: noteName }),
+              onConfirm: async () => {
+                try {
+                  await deleteNote(noteName);
+                  await loadNotes();
+                } catch (error) {
+                  console.error('Error deleting note:', error);
+                }
+                setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+              },
+            });
+          } else if (deleteItem?.type === 'folder' && deleteItem.folderPath) {
+            const folderPath = deleteItem.folderPath;
+            setConfirmDialog({
+              isOpen: true,
+              title: t('common.confirm'),
+              message: t('notesList.deleteFolder', { folder: folderPath }),
+              onConfirm: async () => {
+                try {
+                  await window.electron.folders.delete(folderPath);
+                  await loadFolders();
+                  await loadNotes();
+                } catch (error) {
+                  console.error('Error deleting folder:', error);
+                }
+                setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+              },
+            });
+          }
+          break;
       }
     };
     
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [sidebarNavActive, sidebarOpen, sidebarNavSelectedIndex, navItems, expandedFolders, toggleFolder, openNote, showNewNoteInput, showNewFolderInput, focusEditor, setSidebarNavActive, setSidebarNavSelectedIndex, toggleSidebar]);
+  }, [sidebarNavActive, sidebarOpen, sidebarNavSelectedIndex, navItems, expandedFolders, toggleFolder, openNote, showNewNoteInput, showNewFolderInput, focusEditor, setSidebarNavActive, setSidebarNavSelectedIndex, toggleSidebar, deleteNote, loadNotes, loadFolders, setConfirmDialog, t, confirmDialog.isOpen]);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -349,6 +414,45 @@ export default function NotesList() {
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
       },
     });
+  };
+
+  // ============== RENAME NOTE ==============
+  const startRenameNote = (note: NoteMetadata) => {
+    setRenamingNote(note);
+    setRenameValue(note.name);
+    // Focus input after render
+    setTimeout(() => renameInputRef.current?.focus(), 0);
+  };
+
+  const handleRenameNote = async () => {
+    // Prevent double execution
+    if (!renamingNote) return;
+    
+    const noteToRename = renamingNote;
+    const newName = renameValue.trim();
+    
+    // Clear state first to prevent double execution
+    setRenamingNote(null);
+    
+    if (!newName) {
+      return;
+    }
+    
+    if (newName === noteToRename.name) {
+      return;
+    }
+    
+    try {
+      await renameNote(noteToRename.name, newName);
+      await loadNotes();
+    } catch (error) {
+      console.error('Error renaming note:', error);
+    }
+  };
+
+  const cancelRename = () => {
+    setRenamingNote(null);
+    setRenameValue('');
   };
 
   // ============== MOVE FOLDER ==============
@@ -503,7 +607,42 @@ export default function NotesList() {
           className="flex-shrink-0 opacity-0 group-hover:opacity-50 cursor-grab" 
         />
         <span className="text-base flex-shrink-0">{note.icon || '📄'}</span>
-        <span className="truncate min-w-0 flex-1">{note.name}</span>
+        {renamingNote?.id === note.id ? (
+          <input
+            ref={renameInputRef}
+            type="text"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleRenameNote();
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                cancelRename();
+              }
+              e.stopPropagation();
+            }}
+            onBlur={() => {
+              // Use setTimeout to allow click events to process first
+              setTimeout(() => handleRenameNote(), 0);
+            }}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="flex-1 min-w-0 bg-surface0 border border-surface2 rounded px-1 py-0.5 text-sm text-text focus:outline-none focus:border-lavender"
+            autoFocus
+          />
+        ) : (
+          <span 
+            className="truncate min-w-0 flex-1"
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              startRenameNote(note);
+            }}
+          >
+            {note.name}
+          </span>
+        )}
       </div>
     );
   };
@@ -758,6 +897,17 @@ export default function NotesList() {
                 {t('notesList.open')}
               </button>
               <button
+                className="w-full px-3 py-1.5 text-sm text-left hover:bg-surface0 flex items-center gap-2"
+                onClick={() => {
+                  startRenameNote(contextMenu.item.note!);
+                  closeContextMenu();
+                }}
+              >
+                <Pencil size={14} />
+                {t('common.rename')}
+              </button>
+              <hr className="my-1 border-surface0" />
+              <button
                 className="w-full px-3 py-1.5 text-sm text-left hover:bg-surface0 flex items-center gap-2 text-red"
                 onClick={() => {
                   const noteName = contextMenu.item.note!.name;
@@ -811,7 +961,7 @@ export default function NotesList() {
                 }}
               >
                 <Trash2 size={14} />
-                {t('notesList.deleteFolder')}
+                {t('notesList.deleteThisFolder')}
               </button>
             </>
           )}

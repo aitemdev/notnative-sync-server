@@ -3,7 +3,7 @@ import { useAppStore } from '../stores/app-store';
 import type { NoteMetadata, Tag } from '../../shared/types';
 
 export function useNotes() {
-  const { setNotes, setFolders, setTags, setCurrentNote, setCurrentNoteContent, notes } = useAppStore();
+  const { setNotes, setFolders, setTags, setCurrentNote, setCurrentNoteContent, openNoteWithContent, notes } = useAppStore();
 
   const loadNotes = useCallback(async (folder?: string) => {
     try {
@@ -35,20 +35,24 @@ export function useNotes() {
 
   const openNote = useCallback(async (note: NoteMetadata) => {
     console.log('🔓 Opening note by id:', note.id, note.name, note);
+    // Clear current content immediately to avoid showing stale content while loading
+    openNoteWithContent(note, '');
     try {
       const fullNote = await window.electron.notes.readById(note.id);
       console.log('🔓 Full note received:', fullNote);
+      console.log('🔓 Content type:', typeof fullNote?.content, 'Length:', fullNote?.content?.length);
+      console.log('🔓 Content preview:', fullNote?.content?.slice(0, 200));
       if (fullNote) {
-        console.log('🔓 Setting current note and content, content length:', fullNote.content?.length);
-        setCurrentNote(fullNote);
-        setCurrentNoteContent(fullNote.content);
+        console.log('🔓 Setting current note and content ATOMICALLY, content length:', fullNote.content?.length);
+        // Use atomic operation to prevent race conditions
+        openNoteWithContent(fullNote, fullNote.content || '');
       } else {
         console.log('❌ No full note returned');
       }
     } catch (error) {
       console.error('Error opening note:', error);
     }
-  }, [setCurrentNote, setCurrentNoteContent]);
+  }, [openNoteWithContent]);
 
   const createNote = useCallback(async (name: string, content?: string, folder?: string) => {
     try {

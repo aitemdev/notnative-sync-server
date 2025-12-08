@@ -21,6 +21,7 @@ interface AppState {
   // Right Panel (Chat)
   rightPanelOpen: boolean;
   rightPanelWidth: number;
+  activeRightPanel: 'chat' | 'properties';
   
   // Editor
   currentNote: NoteMetadata | null;
@@ -38,6 +39,10 @@ interface AppState {
   // Search
   searchQuery: string;
   searchResults: NoteMetadata[];
+  
+  // Search overlay
+  searchOverlayOpen: boolean;
+  searchOverlayMode: 'global' | 'note';
   
   // Notes list
   notes: NoteMetadata[];
@@ -59,9 +64,13 @@ interface AppState {
   
   toggleRightPanel: () => void;
   setRightPanelWidth: (width: number) => void;
+  setRightPanelOpen: (open: boolean) => void;
+  setActiveRightPanel: (panel: 'chat' | 'properties') => void;
   
   setCurrentNote: (note: NoteMetadata | null) => void;
   setCurrentNoteContent: (content: string) => void;
+  // Atomic operation to set both note and content together
+  openNoteWithContent: (note: NoteMetadata, content: string) => void;
   setEditorMode: (mode: EditorMode) => void;
   setViewMode: (mode: ViewMode) => void;
   cycleViewMode: () => void;
@@ -75,6 +84,10 @@ interface AppState {
   
   setSearchQuery: (query: string) => void;
   setSearchResults: (results: NoteMetadata[]) => void;
+  
+  // Search overlay actions
+  openSearchOverlay: (mode: 'global' | 'note') => void;
+  closeSearchOverlay: () => void;
   
   setNotes: (notes: NoteMetadata[]) => void;
   addNote: (note: NoteMetadata) => void;
@@ -100,6 +113,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   
   rightPanelOpen: false,
   rightPanelWidth: 400,
+  activeRightPanel: 'chat',
   
   currentNote: null,
   currentNoteContent: '',
@@ -114,6 +128,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   
   searchQuery: '',
   searchResults: [],
+  
+  // Search overlay
+  searchOverlayOpen: false,
+  searchOverlayMode: 'global' as const,
   
   notes: [],
   folders: [],
@@ -150,9 +168,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   
   toggleRightPanel: () => set((state) => ({ rightPanelOpen: !state.rightPanelOpen })),
   setRightPanelWidth: (width) => set({ rightPanelWidth: Math.max(300, Math.min(600, width)) }),
+  setRightPanelOpen: (open) => set({ rightPanelOpen: open }),
+  setActiveRightPanel: (panel) => set({ activeRightPanel: panel }),
   
   setCurrentNote: (note) => set({ currentNote: note, isModified: false }),
   setCurrentNoteContent: (content) => set({ currentNoteContent: content }),
+  // Atomic operation to prevent race conditions when opening a note
+  openNoteWithContent: (note, content) => set({ 
+    currentNote: note, 
+    currentNoteContent: content, 
+    isModified: false 
+  }),
   setEditorMode: (mode) => set({ editorMode: mode }),
   setViewMode: (mode) => {
     localStorage.setItem('notnative-viewMode', mode);
@@ -174,6 +200,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   
   setSearchQuery: (query) => set({ searchQuery: query }),
   setSearchResults: (results) => set({ searchResults: results }),
+  
+  // Search overlay actions
+  openSearchOverlay: (mode) => set({ searchOverlayOpen: true, searchOverlayMode: mode }),
+  closeSearchOverlay: () => set({ searchOverlayOpen: false }),
   
   setNotes: (notes) => set({ notes }),
   addNote: (note) => set((state) => ({ notes: [...state.notes, note] })),

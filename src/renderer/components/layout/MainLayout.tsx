@@ -5,6 +5,7 @@ import Editor from '../editor/Editor';
 import StatusBar from '../common/StatusBar';
 import { Chat } from '../chat/Chat';
 import QuickNoteModal from '../common/QuickNoteModal';
+import SearchOverlay from '../common/SearchOverlay';
 import { useNotes } from '../../hooks/useNotes';
 import { X } from 'lucide-react';
 
@@ -22,7 +23,11 @@ export default function MainLayout() {
     toggleSidebar,
     currentNote, 
     setCurrentNote, 
-    setCurrentNoteContent 
+    setCurrentNoteContent,
+    searchOverlayOpen,
+    searchOverlayMode,
+    openSearchOverlay,
+    closeSearchOverlay,
   } = useAppStore();
   const { loadNotes, loadFolders, loadTags } = useNotes();
   
@@ -77,13 +82,25 @@ export default function MainLayout() {
 
     // Listen for note content updates (from AI tools)
     const unsubscribeContent = window.electron.notes_events.onContentUpdated((data) => {
-      console.log('📝 Note content updated:', data.name, 'id:', data.id);
-      const current = currentNoteRef.current;
+      console.log('📝 Note content updated event received:', { 
+        eventName: data.name, 
+        eventId: data.id,
+        contentLength: data.content?.length 
+      });
       
-      // Check if the updated note is currently open (by id or name)
-      if (current && (current.id === data.id || current.name === data.name)) {
-        console.log('📝 Updating editor content, length:', data.content.length);
+      // Get current note directly from store to avoid stale ref issues
+      const currentStoreNote = useAppStore.getState().currentNote;
+      console.log('📝 Current note from store:', { 
+        storeName: currentStoreNote?.name, 
+        storeId: currentStoreNote?.id 
+      });
+      
+      // ONLY update if the note ID matches exactly
+      if (currentStoreNote && currentStoreNote.id === data.id) {
+        console.log('📝 ✅ IDs match! Updating editor content for note id:', data.id);
         setCurrentNoteContent(data.content);
+      } else {
+        console.log('📝 ❌ IDs do NOT match - ignoring update. Store id:', currentStoreNote?.id, 'Event id:', data.id);
       }
       
       // Also reload notes list to update sidebar
@@ -95,8 +112,8 @@ export default function MainLayout() {
       console.log('📝 Note renamed:', data.oldName, '->', data.newName);
       const current = currentNoteRef.current;
       
-      // If the renamed note is currently open, update currentNote
-      if (current && (current.id === data.id || current.name === data.oldName)) {
+      // If the renamed note is currently open (by ID only), update currentNote
+      if (current && current.id === data.id) {
         console.log('📝 Updating currentNote with new name');
         setCurrentNote({
           ...current,
@@ -123,16 +140,36 @@ export default function MainLayout() {
         const { isSettingsOpen, setIsSettingsOpen } = useAppStore.getState();
         setIsSettingsOpen(!isSettingsOpen);
       }
+      
+      // Ctrl+F - Global search
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f' && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        // Deactivate sidebar nav to prevent key conflicts
+        useAppStore.getState().setSidebarNavActive(false);
+        openSearchOverlay('global');
+      }
+      
+      // Alt+F - Search in current note
+      if (e.altKey && e.key === 'f' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (currentNote) {
+          // Deactivate sidebar nav to prevent key conflicts
+          useAppStore.getState().setSidebarNavActive(false);
+          openSearchOverlay('note');
+        }
+      }
     };
-    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown, true);
 
     return () => {
       unsubscribeFiles();
       unsubscribeContent();
       unsubscribeRename();
-      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keydown', handleKeyDown, true);
     };
-  }, [loadNotes, loadFolders, loadTags, toggleRightPanel, setCurrentNote, setCurrentNoteContent]);
+  }, [loadNotes, loadFolders, loadTags, toggleRightPanel, setCurrentNote, setCurrentNoteContent, openSearchOverlay, currentNote]);
 
   // Calculate responsive widths
   const effectiveSidebarWidth = isMobile 
@@ -221,6 +258,13 @@ export default function MainLayout() {
       {/* Status bar */}
       <StatusBar />
       <QuickNoteModal />
+      
+      {/* Search Overlay */}
+      <SearchOverlay
+        isOpen={searchOverlayOpen}
+        mode={searchOverlayMode}
+        onClose={closeSearchOverlay}
+      />
     </div>
   );
 }

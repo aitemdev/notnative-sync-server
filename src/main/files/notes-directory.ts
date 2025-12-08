@@ -81,6 +81,22 @@ export class NotesDirectory {
   }
 
   /**
+   * Check if a folder should be ignored (has special extensions or patterns)
+   * This filters out folders like "Bambu Lab A1.assets" or other system folders
+   */
+  private shouldIgnoreFolder(folderName: string): boolean {
+    // Ignore hidden folders
+    if (folderName.startsWith('.')) return true;
+    
+    // Ignore folders with specific extensions
+    const ignoredExtensions = ['.assets', '.asset', '.app', '.bundle', '.framework', '.plugin', '.kext', '.tmp', '.cache'];
+    const ext = path.extname(folderName).toLowerCase();
+    if (ignoredExtensions.includes(ext)) return true;
+    
+    return false;
+  }
+
+  /**
    * List all note files recursively
    */
   async listAllNotes(): Promise<string[]> {
@@ -121,8 +137,8 @@ export class NotesDirectory {
     const entries = await fs.promises.readdir(targetDir, { withFileTypes: true });
 
     for (const entry of entries) {
-      // Skip hidden folders
-      if (entry.name.startsWith('.')) continue;
+      // Skip hidden folders and folders with special extensions
+      if (this.shouldIgnoreFolder(entry.name)) continue;
 
       if (entry.isDirectory()) {
         const relativePath = parentFolder
@@ -148,8 +164,8 @@ export class NotesDirectory {
     const entries = await fs.promises.readdir(dir, { withFileTypes: true });
 
     for (const entry of entries) {
-      // Skip hidden folders
-      if (entry.name.startsWith('.')) continue;
+      // Skip hidden folders and folders with special extensions
+      if (this.shouldIgnoreFolder(entry.name)) continue;
 
       if (entry.isDirectory()) {
         const relativePath = prefix ? path.join(prefix, entry.name) : entry.name;

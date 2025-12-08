@@ -287,8 +287,13 @@ export class NotesWatcher {
   async initialScan(): Promise<void> {
     console.log('📊 Starting initial scan...');
     
+    // Check if FTS needs reindexing
+    const ftsCount = this.notesDb.getFTSCount();
+    const notesCount = this.notesDb.listNotes().length;
+    console.log(`📊 FTS has ${ftsCount} entries, notes table has ${notesCount} notes`);
+    
     const notes = await this.notesDir.listAllNotes();
-    console.log(`📊 Found ${notes.length} notes`);
+    console.log(`📊 Found ${notes.length} notes on disk`);
 
     for (const notePath of notes) {
       try {
@@ -298,7 +303,9 @@ export class NotesWatcher {
       }
     }
 
-    console.log('✅ Initial scan complete');
+    // Log final FTS status
+    const finalFtsCount = this.notesDb.getFTSCount();
+    console.log(`✅ Initial scan complete. FTS now has ${finalFtsCount} entries`);
     
     // Notify renderer that notes are ready
     this.notifyRenderer('sync-complete', '');

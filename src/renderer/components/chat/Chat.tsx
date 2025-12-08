@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { X, FileText } from 'lucide-react';
 import { useChatStore } from '../../stores/chat-store';
 import { useAppStore } from '../../stores/app-store';
 import type { ChatMessage } from '../../../shared/types';
@@ -188,11 +189,33 @@ export function Chat() {
   const [error, setError] = useState<string | null>(null);
   
   // Note autocomplete state
-  const { notes, setCurrentNote, setCurrentNoteContent, rightPanelOpen } = useAppStore();
+  const { notes, currentNote, setCurrentNote, setCurrentNoteContent, rightPanelOpen } = useAppStore();
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestions, setSuggestions] = useState<Array<{ id: number; name: string; folder: string | null }>>([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [mentionStart, setMentionStart] = useState(-1);
+  
+  // Context notes state - notes that will be included as context in the message
+  const [contextNotes, setContextNotes] = useState<Array<{ id: number; name: string; folder: string | null }>>([]);
+  
+  // Track if we've already added the initial context for this chat opening
+  const hasAddedInitialContext = useRef(false);
+  const prevRightPanelOpenRef = useRef(false);
+
+  // When chat opens, add current note as context if there is one
+  useEffect(() => {
+    const justOpened = rightPanelOpen && !prevRightPanelOpenRef.current;
+    prevRightPanelOpenRef.current = rightPanelOpen;
+    
+    if (justOpened && currentNote) {
+      // Chat just opened - add current note as context if not already present
+      setContextNotes(prev => {
+        const alreadyExists = prev.some(n => n.id === currentNote.id);
+        if (alreadyExists) return prev;
+        return [...prev, { id: currentNote.id, name: currentNote.name, folder: currentNote.folder ?? null }];
+      });
+    }
+  }, [rightPanelOpen, currentNote]);
 
   // Focus chat input when the right panel (chat) opens
   useEffect(() => {
@@ -257,6 +280,42 @@ export function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingContent]);
 
+  // Listen for AI chat messages from selection bubble
+  useEffect(() => {
+    const handleAIChatMessage = async (event: CustomEvent<{ message: string; autoSend: boolean }>) => {
+      const { message, autoSend } = event.detail;
+      
+      if (autoSend && message.trim()) {
+        // Send directly instead of setting input
+        setError(null);
+
+        // Add user message to UI immediately
+        const userMessage: ChatMessage = {
+          id: Date.now(),
+          sessionId: currentSession?.id ?? 0,
+          role: 'user',
+          content: message,
+          createdAt: new Date(),
+        };
+        addMessage(userMessage);
+
+        setIsStreaming(true);
+
+        try {
+          await window.electron.ai.sendMessage(currentSession?.id ?? null, message);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Failed to send message');
+          setIsStreaming(false);
+        }
+      } else {
+        setInputMessage(message);
+      }
+    };
+
+    window.addEventListener('ai-chat-message', handleAIChatMessage as unknown as EventListener);
+    return () => window.removeEventListener('ai-chat-message', handleAIChatMessage as unknown as EventListener);
+  }, [currentSession, addMessage]);
+
   // Load sessions on mount
   useEffect(() => {
     window.electron.ai.getSessions().then(setSessions);
@@ -307,14 +366,30 @@ export function Chat() {
     };
   }, [currentSession]);
 
+  // Remove a note from context
+  const removeContextNote = useCallback((noteId: number) => {
+    setContextNotes(prev => prev.filter(n => n.id !== noteId));
+  }, []);
+
   const handleSend = useCallback(async () => {
     if (!inputMessage.trim() || isStreaming) return;
 
     const message = inputMessage.trim();
+    
+    // Build message with context mentions (AI will use tools to read the notes)
+    let fullMessage = message;
+    if (contextNotes.length > 0) {
+      const contextMentions = contextNotes.map(n => {
+        const notePath = n.folder ? `${n.folder}/${n.name}` : n.name;
+        return `@${notePath}`;
+      }).join(' ');
+      fullMessage = `${contextMentions}\n\n${message}`;
+    }
+    
     setInputMessage('');
     setError(null);
 
-    // Add user message to UI immediately
+    // Add user message to UI (show only the user's message, context is shown as chips)
     const userMessage: ChatMessage = {
       id: Date.now(),
       sessionId: currentSession?.id ?? 0,
@@ -330,13 +405,13 @@ export function Chat() {
     setTimeout(() => textareaRef.current?.focus(), 0);
 
     try {
-      await window.electron.ai.sendMessage(currentSession?.id ?? null, message);
+      await window.electron.ai.sendMessage(currentSession?.id ?? null, fullMessage);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send message');
       setIsStreaming(false);
       setTimeout(() => textareaRef.current?.focus(), 0);
     }
-  }, [inputMessage, isStreaming, currentSession]);
+  }, [inputMessage, isStreaming, currentSession, contextNotes]);
 
   // When streaming ends, return focus to the input so the user can keep typing
   useEffect(() => {
@@ -379,27 +454,32 @@ export function Chat() {
     setSuggestions([]);
   }, [notes, setInputMessage]);
 
-  // Complete the mention
+  // Complete the mention - add note to context instead of text
   const completeMention = useCallback((note: { id: number; name: string; folder: string | null }) => {
     if (mentionStart === -1) return;
     
+    // Remove the @query from input
     const cursorPos = textareaRef.current?.selectionStart || inputMessage.length;
     const before = inputMessage.slice(0, mentionStart);
     const after = inputMessage.slice(cursorPos);
-
-    const mentionText = note.folder ? `${note.folder}/${note.name}` : note.name;
-    const newValue = `${before}@${mentionText} ${after}`;
+    const newValue = `${before}${after}`.trim();
     setInputMessage(newValue);
+    
+    // Add note to context if not already present
+    setContextNotes(prev => {
+      const alreadyExists = prev.some(n => n.id === note.id);
+      if (alreadyExists) return prev;
+      return [...prev, note];
+    });
+    
     setShowSuggestions(false);
     setSuggestions([]);
     setMentionStart(-1);
     
-    // Focus back and set cursor position
+    // Focus back
     setTimeout(() => {
       if (textareaRef.current) {
-        const newPos = mentionStart + mentionText.length + 2; // @ + text + space
         textareaRef.current.focus();
-        textareaRef.current.setSelectionRange(newPos, newPos);
       }
     }, 0);
   }, [inputMessage, mentionStart, setInputMessage]);
@@ -497,6 +577,20 @@ export function Chat() {
           <MessageBubble key={msg.id} message={msg} onNoteClick={handleNoteClick} />
         ))}
 
+        {isStreaming && !streamingContent && (
+          <div className="flex justify-start">
+            <div className="max-w-[85%] rounded-lg px-4 py-2.5 bg-surface0 text-text">
+              <div className="flex items-center gap-2 text-sm text-subtext0">
+                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                  <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+                </svg>
+                <span>{t('ai.thinking', 'Pensando...')}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {isStreaming && streamingContent && (
           <MessageBubble
             message={{
@@ -522,6 +616,30 @@ export function Chat() {
 
       {/* Input */}
       <div className="p-4 border-t border-surface0 relative">
+        {/* Context notes chips */}
+        {contextNotes.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {contextNotes.map((note) => (
+              <div
+                key={note.id}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-surface1 text-text border border-surface2"
+              >
+                <FileText size={12} className="text-mauve" />
+                <span className="truncate max-w-[150px]">
+                  {note.folder ? `${note.folder}/${note.name}` : note.name}
+                </span>
+                <button
+                  onClick={() => removeContextNote(note.id)}
+                  className="p-0.5 rounded hover:bg-surface2 text-subtext0 hover:text-text transition-colors"
+                  title={t('chat.removeContext', 'Remove from context')}
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        
         {/* Suggestions dropdown */}
         {showSuggestions && suggestions.length > 0 && (
           <div className="absolute bottom-full left-4 right-4 mb-2 rounded-lg overflow-hidden shadow-lg border bg-surface0 border-surface1 max-h-[200px] overflow-y-auto">
@@ -548,7 +666,7 @@ export function Chat() {
             value={inputMessage}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder={t('chat.placeholder')}
+            placeholder={contextNotes.length > 0 ? t('chat.placeholderWithContext', 'Ask about the context...') : t('chat.placeholder')}
             rows={1}
             className="flex-1 resize-none bg-transparent outline-none text-sm text-text min-h-[24px] max-h-[120px]"
           />

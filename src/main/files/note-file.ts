@@ -85,6 +85,22 @@ date: ${date}
   }
 
   /**
+   * Get the assets directory for this note (e.g., NoteName.assets)
+   */
+  get assetsDirectory(): string {
+    return path.join(this.directory, `${this.name}.assets`);
+  }
+
+  /**
+   * Ensure assets directory exists and return its path
+   */
+  ensureAssetsDirectory(): string {
+    const dir = this.assetsDirectory;
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  }
+
+  /**
    * Read the note content
    */
   read(): string {
@@ -169,6 +185,13 @@ date: ${date}
       throw new Error(`A note with name "${newName}" already exists`);
     }
 
+    // Rename assets folder if it exists
+    const oldAssets = this.assetsDirectory;
+    const newAssets = path.join(this.directory, `${newName}.assets`);
+    if (fs.existsSync(oldAssets)) {
+      fs.renameSync(oldAssets, newAssets);
+    }
+
     fs.renameSync(this.filePath, newPath);
     this.filePath = newPath;
     (this as { name: string }).name = newName;
@@ -182,6 +205,14 @@ date: ${date}
 
     // Create target directory if needed
     fs.mkdirSync(path.dirname(newPath), { recursive: true });
+
+    // Move assets folder if it exists
+    const oldAssets = this.assetsDirectory;
+    const newAssetsDir = path.join(notesDir.root, newFolder, `${this.name}.assets`);
+    if (fs.existsSync(oldAssets)) {
+      fs.mkdirSync(path.dirname(newAssetsDir), { recursive: true });
+      fs.renameSync(oldAssets, newAssetsDir);
+    }
 
     fs.renameSync(this.filePath, newPath);
     this.filePath = newPath;

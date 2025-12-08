@@ -14,6 +14,7 @@ import { createQuickNoteWindow, closeQuickNoteWindow } from '../windows/quicknot
 import { getMainWindow } from '../windows/main-window';
 import { APP_NAME, APP_VERSION, AI_EMBEDDING_MODEL, AI_DEFAULT_MODEL } from '../../shared/constants';
 import { getApiKey, setApiKey, hasApiKey } from '../settings/store';
+import fs from 'fs';
 
 export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirectory): void {
   const notesDb = new NotesDatabase(db);
@@ -116,10 +117,13 @@ export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirect
 
   // Update note by ID (more reliable than by name)
   ipcMain.handle(IPC_CHANNELS['notes:update-by-id'], async (_, id: number, content: string) => {
+    console.log('📝 [IPC] notes:update-by-id called - id:', id, 'content length:', content.length);
     const metadata = notesDb.getNoteById(id);
     if (!metadata) {
+      console.error('❌ [IPC] Note not found with id:', id);
       throw new Error(`Note with id ${id} not found`);
     }
+    console.log('📝 [IPC] Writing to note:', metadata.name, 'path:', metadata.path);
 
     const noteFile = NoteFile.open(metadata.path);
     
@@ -134,6 +138,40 @@ export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirect
     notesDb.indexNoteContent(metadata.id, metadata.name, content);
     
     return metadata;
+  });
+
+  // ============== IMAGES (EDITOR) ==============
+  ipcMain.handle(IPC_CHANNELS['images:save'], async (_event, noteId: number, fileName: string, data: Buffer | ArrayBuffer | Uint8Array) => {
+    if (!noteId) {
+      throw new Error('noteId is required to save an image');
+    }
+
+    const metadata = notesDb.getNoteById(noteId);
+    if (!metadata) {
+      throw new Error(`Note with id ${noteId} not found`);
+    }
+
+    // Validate extension
+    const ext = (path.extname(fileName) || '').toLowerCase();
+    const allowed = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
+    const safeExt = allowed.includes(ext) ? ext : '.png';
+
+    // Generate a safe filename
+    const baseName = path.basename(fileName, path.extname(fileName)).replace(/[^a-zA-Z0-9-_]/g, '_').slice(0, 50) || 'image';
+    const unique = `${baseName}-${Date.now()}`;
+
+    // Save in note's assets directory
+    const noteFile = NoteFile.open(metadata.path);
+    const assetsDir = noteFile.ensureAssetsDirectory();
+    const targetName = `${unique}${safeExt}`;
+    const targetPath = path.join(assetsDir, targetName);
+
+    const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    fs.writeFileSync(targetPath, buffer);
+
+    // Return relative path from the note file location to the image
+    const relativePath = path.relative(path.dirname(metadata.path), targetPath);
+    return { relativePath };
   });
 
   ipcMain.handle(IPC_CHANNELS['notes:delete'], async (_, name: string) => {
@@ -179,7 +217,34 @@ export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirect
   });
 
   ipcMain.handle(IPC_CHANNELS['notes:search'], async (_, query: string) => {
-    return notesDb.searchNotes(query);
+    console.log(`🔍 Searching for: "${query}"`);
+    const ftsCount = notesDb.getFTSCount();
+    const notesCount = notesDb.listNotes().length;
+    console.log(`🔍 FTS index has ${ftsCount} entries, notes table has ${notesCount} notes`);
+    
+    const results = notesDb.searchNotes(query);
+    console.log(`🔍 Found ${results.length} results`);
+    return results;
+  });
+
+  ipcMain.handle(IPC_CHANNELS['notes:reindex'], async () => {
+    console.log('🔄 Starting FTS reindex...');
+    const notes = notesDb.getAllNotesForReindex();
+    let indexed = 0;
+    
+    for (const note of notes) {
+      try {
+        const noteFile = NoteFile.open(note.path);
+        const content = noteFile.read();
+        notesDb.indexNoteContent(note.id, note.name, content);
+        indexed++;
+      } catch (error) {
+        console.error(`❌ Failed to reindex ${note.name}:`, error);
+      }
+    }
+    
+    console.log(`✅ Reindexed ${indexed}/${notes.length} notes`);
+    return { indexed, total: notes.length };
   });
 
   // ============== FOLDERS ==============

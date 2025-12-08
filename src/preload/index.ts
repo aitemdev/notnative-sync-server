@@ -22,6 +22,7 @@ export interface ElectronAPI {
     rename: (oldName: string, newName: string) => Promise<void>;
     move: (name: string, folder: string) => Promise<void>;
     search: (query: string) => Promise<NoteSearchResult[]>;
+    reindex: () => Promise<{ indexed: number; total: number }>;
   };
   
   // Folders
@@ -107,6 +108,11 @@ export interface ElectronAPI {
     setNotesDirectory: (path: string) => Promise<void>;
     onChanged: (callback: (type: string, path: string) => void) => () => void;
   };
+
+  // Images
+  images: {
+    save: (noteId: number, fileName: string, data: Uint8Array | ArrayBuffer) => Promise<{ relativePath: string }>;
+  };
   
   // Note content events
   notes_events: {
@@ -160,6 +166,7 @@ const electronAPI: ElectronAPI = {
     rename: (oldName, newName) => ipcRenderer.invoke(IPC_CHANNELS['notes:rename'], oldName, newName),
     move: (name, folder) => ipcRenderer.invoke(IPC_CHANNELS['notes:move'], name, folder),
     search: (query) => ipcRenderer.invoke(IPC_CHANNELS['notes:search'], query),
+    reindex: () => ipcRenderer.invoke(IPC_CHANNELS['notes:reindex']),
   },
   
   // Folders API
@@ -261,6 +268,11 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.on(IPC_CHANNELS['files:changed'], subscription);
       return () => ipcRenderer.removeListener(IPC_CHANNELS['files:changed'], subscription);
     },
+  },
+
+  // Images API
+  images: {
+    save: (noteId, fileName, data) => ipcRenderer.invoke(IPC_CHANNELS['images:save'], noteId, fileName, data),
   },
   
   // Note content updates (from AI tools)

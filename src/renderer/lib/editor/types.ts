@@ -23,6 +23,7 @@ export interface VimEditorProps {
   onChange?: (content: string) => void;
   onModeChange?: (mode: EditorMode) => void;
   onScroll?: (scrollTop: number, scrollHeight: number, clientHeight: number) => void;
+  noteId: number;
   readOnly?: boolean;
   className?: string;
 }

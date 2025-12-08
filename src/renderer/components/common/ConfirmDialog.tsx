@@ -24,13 +24,14 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   const { t } = useTranslation();
+  const dialogRef = useRef<HTMLDivElement>(null);
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Focus cancel button when opening (safer default)
+  // Focus dialog container when opening to capture keyboard events
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => cancelButtonRef.current?.focus(), 0);
+      setTimeout(() => dialogRef.current?.focus(), 0);
     }
   }, [isOpen]);
 
@@ -41,13 +42,20 @@ export function ConfirmDialog({
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
+        e.stopImmediatePropagation();
         onCancel();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        onConfirm();
       }
     },
-    [isOpen, onCancel]
+    [isOpen, onCancel, onConfirm]
   );
 
   useEffect(() => {
+    // Use capture phase with highest priority
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [handleKeyDown]);
@@ -73,7 +81,10 @@ export function ConfirmDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center"
+      ref={dialogRef}
+      tabIndex={-1}
+      data-confirm-dialog="true"
+      className="fixed inset-0 z-[100] flex items-center justify-center outline-none"
       onClick={(e) => {
         if (e.target === e.currentTarget) onCancel();
       }}

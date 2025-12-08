@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore, type SidebarPanel } from '../../stores/app-store';
 import NotesList from './NotesList';
 import SearchPanel from './SearchPanel';
-import { FileText, Search, Database, MessageSquare } from 'lucide-react';
+import { FileText, Database } from 'lucide-react';
 
 interface SidebarProps {
   onClose?: () => void;
@@ -16,15 +16,13 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
   const panels: { id: SidebarPanel; icon: React.ElementType; label: string }[] = [
     { id: 'notes', icon: FileText, label: t('sidebar.panels.notes') },
-    { id: 'search', icon: Search, label: t('sidebar.panels.search') },
     { id: 'bases', icon: Database, label: t('sidebar.panels.bases') },
-    { id: 'chat', icon: MessageSquare, label: t('sidebar.panels.chat') },
   ];
 
   return (
     <div className="flex flex-col h-full bg-mantle">
       {/* Panel tabs */}
-      <div className="flex items-center justify-center h-10 border-b border-surface0 px-1 overflow-x-auto scrollbar-none">
+      <div className="flex items-center h-10 border-b border-surface0 px-1 overflow-x-auto scrollbar-none">
         {panels.map(({ id, icon: Icon, label }) => (
           <button
             key={id}
@@ -52,11 +50,6 @@ export default function Sidebar({ onClose }: SidebarProps) {
         {sidebarPanel === 'bases' && (
           <div className="p-3 sm:p-4 text-subtext0 text-xs sm:text-sm">
             {t('sidebar.basesComingSoon')}
-          </div>
-        )}
-        {sidebarPanel === 'chat' && (
-          <div className="p-3 sm:p-4 text-subtext0 text-xs sm:text-sm">
-            {t('sidebar.chatComingSoon')}
           </div>
         )}
       </div>

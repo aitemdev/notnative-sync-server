@@ -11,6 +11,14 @@ import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
 import { EditorMode, type VimEditorProps } from '../../lib/editor/types';
 import { notnativeDark, notnativeSyntax } from '../../lib/editor/themes';
 import { useAppStore } from '../../stores/app-store';
+import SelectionBubble from './SelectionBubble';
+
+// Global ref to access editor view from outside
+let globalEditorView: EditorView | null = null;
+
+export function getGlobalEditorView(): EditorView | null {
+  return globalEditorView;
+}
 
 export default function VimEditor({ 
   initialContent, 
@@ -18,6 +26,7 @@ export default function VimEditor({
   onChange,
   onModeChange,
   onScroll,
+  noteId,
   readOnly = false,
   className = '',
 }: VimEditorProps) {
@@ -28,6 +37,21 @@ export default function VimEditor({
   const contentRef = useRef(initialContent);
   const initialContentRef = useRef(initialContent);
   const lastModeRef = useRef<EditorMode>(EditorMode.Normal);
+  const noteIdRef = useRef<number | null>(noteId ?? null);
+  
+  // Flag to suppress onChange when updating from external props
+  const isExternalUpdateRef = useRef(false);
+  
+  // Selection bubble state
+  const [showBubble, setShowBubble] = useState(false);
+  const [bubblePosition, setBubblePosition] = useState({ x: 0, y: 0 });
+  const [selectedText, setSelectedText] = useState('');
+  const [selectionRange, setSelectionRange] = useState<{ from: number; to: number } | null>(null);
+  const bubbleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    noteIdRef.current = noteId ?? null;
+  }, [noteId]);
 
   // Define vim ex commands
   const setupVimCommands = useCallback(() => {
@@ -88,6 +112,48 @@ export default function VimEditor({
 
     setupVimCommands();
 
+    const insertMarkdownAt = (view: EditorView, markdown: string, position?: number) => {
+      const pos = typeof position === 'number' ? position : view.state.selection.main.from;
+      const doc = view.state.doc.toString();
+      const needsPrefix = pos > 0 && doc[pos - 1] !== '\n';
+      const insertText = `${needsPrefix ? '\n' : ''}${markdown}\n`;
+      view.dispatch({
+        changes: {
+          from: pos,
+          to: pos,
+          insert: insertText,
+        },
+        selection: { anchor: pos + insertText.length },
+      });
+      view.focus();
+      return insertText.length;
+    };
+
+    const saveImagesAndInsert = async (files: File[], view: EditorView, position?: number) => {
+      const currentNoteId = noteIdRef.current;
+      if (!currentNoteId) {
+        console.warn('Skipping image insert: no note id');
+        return;
+      }
+
+      let cursor = position ?? view.state.selection.main.from;
+
+      for (const file of files) {
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const data = new Uint8Array(arrayBuffer);
+          const response = await window.electron.images.save(currentNoteId, file.name || 'image', data);
+          const relPath = response.relativePath.replace(/\\/g, '/');
+          const alt = (file.name || 'image').replace(/\.[^.]+$/, '') || 'image';
+          const markdown = `![${alt}](${relPath})`;
+          const inserted = insertMarkdownAt(view, markdown, cursor);
+          cursor += inserted;
+        } catch (error) {
+          console.error('Error saving image', error);
+        }
+      }
+    };
+
     const extensions: Extension[] = [
       // Vim mode (must be first)
       vim(),
@@ -130,7 +196,13 @@ export default function VimEditor({
         if (update.docChanged) {
           const content = update.state.doc.toString();
           contentRef.current = content;
-          onChange?.(content);
+          
+          // Only trigger onChange if this is NOT an external update (from props)
+          if (!isExternalUpdateRef.current) {
+            onChange?.(content);
+          }
+          // Note: Don't hide bubble here - let the bubble handle its own lifecycle
+          // The bubble should only close when the user explicitly closes it or accepts a change
         }
         
         // Track cursor position
@@ -140,6 +212,17 @@ export default function VimEditor({
           line: line.number,
           col: pos - line.from + 1,
         });
+        
+        // Track selection changes - update selection range but DON'T auto-show bubble
+        const selection = update.state.selection.main;
+        if (selection.from !== selection.to) {
+          const text = update.state.doc.sliceString(selection.from, selection.to);
+          if (text.trim().length > 0) {
+            setSelectedText(text);
+            setSelectionRange({ from: selection.from, to: selection.to });
+          }
+        }
+        // Note: Don't hide bubble when selection is lost - user might be interacting with the bubble
         
         // Track vim mode changes
         const cm = getCM(update.view);
@@ -197,6 +280,22 @@ export default function VimEditor({
           }
           return false;
         },
+        paste: (event, view) => {
+          const files = Array.from(event.clipboardData?.files || []).filter(file => file.type.startsWith('image/'));
+          if (!files.length) return false;
+          event.preventDefault();
+          void saveImagesAndInsert(files, view);
+          return true;
+        },
+        drop: (event, view) => {
+          const files = Array.from(event.dataTransfer?.files || []).filter(file => file.type.startsWith('image/'));
+          if (!files.length) return false;
+          event.preventDefault();
+          const position = view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? view.state.selection.main.from;
+          view.dispatch({ selection: { anchor: position } });
+          void saveImagesAndInsert(files, view, position);
+          return true;
+        },
       }),
       
       // Enable line wrapping
@@ -214,17 +313,19 @@ export default function VimEditor({
     });
 
     viewRef.current = view;
+    globalEditorView = view;
     initialContentRef.current = initialContent;
 
     // Focus editor
     view.focus();
 
     return () => {
+      globalEditorView = null;
       view.destroy();
     };
   }, []); // Only run once on mount
 
-  // Update content when initialContent changes (new note selected)
+  // Update content when initialContent changes (new note selected or AI update)
   useEffect(() => {
     if (!viewRef.current) {
       console.log('📝 VimEditor: No view ref');
@@ -241,7 +342,11 @@ export default function VimEditor({
     
     // Check if the new content is different from what's in the editor
     if (initialContent !== currentContent) {
-      console.log('📝 VimEditor: Updating editor content');
+      console.log('📝 VimEditor: Updating editor content from external source');
+      
+      // Set flag to prevent onChange from firing during this update
+      isExternalUpdateRef.current = true;
+      
       viewRef.current.dispatch({
         changes: {
           from: 0,
@@ -251,6 +356,11 @@ export default function VimEditor({
       });
       initialContentRef.current = initialContent;
       contentRef.current = initialContent;
+      
+      // Reset flag after a microtask to ensure the update is processed
+      queueMicrotask(() => {
+        isExternalUpdateRef.current = false;
+      });
     }
   }, [initialContent]);
 
@@ -263,6 +373,137 @@ export default function VimEditor({
   const forceSave = useCallback(() => {
     onSave(getContent());
   }, [onSave, getContent]);
+
+  // Handle AI actions from selection bubble
+  const handleAIAction = useCallback(async (text: string, action: 'chat' | 'improve' | 'explain' | 'replace') => {
+    const { setRightPanelOpen, setActiveRightPanel } = useAppStore.getState();
+    
+    if (action === 'chat' || action === 'explain') {
+      // Open chat panel and send message
+      setRightPanelOpen(true);
+      setActiveRightPanel('chat');
+      
+      // Prepare the message based on action
+      let message = '';
+      if (action === 'chat') {
+        message = `Quiero preguntarte sobre este texto:\n\n"${text}"`;
+      } else if (action === 'explain') {
+        message = `Por favor, explícame este texto:\n\n"${text}"`;
+      }
+      
+      // Send message to chat (we'll emit an event that chat can listen to)
+      window.dispatchEvent(new CustomEvent('ai-chat-message', { 
+        detail: { message, autoSend: true } 
+      }));
+      
+      setShowBubble(false);
+    } else if (action === 'improve') {
+      // Improve text directly and replace
+      try {
+        const response = await window.electron.ai.sendMessage(
+          null, 
+          `Mejora el siguiente texto, haciéndolo más claro, conciso y bien redactado. Devuelve SOLO el texto mejorado, sin explicaciones ni comentarios adicionales:\n\n${text}`
+        );
+        
+        if (response?.message?.content && selectionRange && viewRef.current) {
+          viewRef.current.dispatch({
+            changes: {
+              from: selectionRange.from,
+              to: selectionRange.to,
+              insert: response.message.content,
+            },
+          });
+        }
+      } catch (error) {
+        console.error('Error improving text:', error);
+      }
+      setShowBubble(false);
+    } else if (action === 'replace') {
+      // Custom instruction - the text already includes the instruction
+      try {
+        const response = await window.electron.ai.sendMessage(
+          null,
+          `${text}\n\nDevuelve SOLO el texto modificado según las instrucciones, sin explicaciones adicionales.`
+        );
+        
+        if (response?.message?.content && selectionRange && viewRef.current) {
+          viewRef.current.dispatch({
+            changes: {
+              from: selectionRange.from,
+              to: selectionRange.to,
+              insert: response.message.content,
+            },
+          });
+        }
+      } catch (error) {
+        console.error('Error with custom edit:', error);
+      }
+      setShowBubble(false);
+    }
+  }, [selectionRange]);
+
+  // Handle text replacement from bubble
+  const handleReplaceText = useCallback((newText: string) => {
+    if (selectionRange && viewRef.current) {
+      viewRef.current.dispatch({
+        changes: {
+          from: selectionRange.from,
+          to: selectionRange.to,
+          insert: newText,
+        },
+      });
+      setShowBubble(false);
+      // Return focus to editor
+      setTimeout(() => viewRef.current?.focus(), 50);
+    }
+  }, [selectionRange]);
+
+  // Handle bubble close - return focus to editor
+  const handleBubbleClose = useCallback(() => {
+    setShowBubble(false);
+    setTimeout(() => viewRef.current?.focus(), 50);
+  }, []);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (bubbleTimeoutRef.current) {
+        clearTimeout(bubbleTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Handle Ctrl+K to show bubble for current selection
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k' && !e.shiftKey && !e.altKey) {
+        const view = viewRef.current;
+        if (view) {
+          const selection = view.state.selection.main;
+          if (selection.from !== selection.to) {
+            e.preventDefault();
+            e.stopPropagation();
+            const text = view.state.doc.sliceString(selection.from, selection.to);
+            const coords = view.coordsAtPos(selection.to);
+            if (coords && text.trim().length > 0) {
+              // Cancel any pending bubble timeout
+              if (bubbleTimeoutRef.current) {
+                clearTimeout(bubbleTimeoutRef.current);
+              }
+              setSelectedText(text);
+              setSelectionRange({ from: selection.from, to: selection.to });
+              setBubblePosition({ x: coords.left, y: coords.bottom + 8 });
+              setShowBubble(true);
+            }
+          }
+        }
+      }
+    };
+
+    // Use capture phase to intercept before CodeMirror/Vim
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, []);
 
   return (
     <div className={`vim-editor flex flex-col h-full ${className}`}>
@@ -278,6 +519,18 @@ export default function VimEditor({
           }
         }}
       />
+      
+      {/* Selection bubble for AI actions */}
+      {showBubble && selectedText && (
+        <SelectionBubble
+          selectedText={selectedText}
+          noteContent={contentRef.current}
+          position={bubblePosition}
+          onClose={handleBubbleClose}
+          onAskAI={handleAIAction}
+          onReplaceText={handleReplaceText}
+        />
+      )}
     </div>
   );
 }

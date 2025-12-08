@@ -12,6 +12,7 @@ export const IPC_CHANNELS = {
   'notes:rename': 'notes:rename',
   'notes:move': 'notes:move',
   'notes:search': 'notes:search',
+  'notes:reindex': 'notes:reindex',
   'notes:get-metadata': 'notes:get-metadata',
 
   // ============== FOLDERS ==============
@@ -110,6 +111,9 @@ export const IPC_CHANNELS = {
   'media:youtube-info': 'media:youtube-info',
   'media:youtube-play': 'media:youtube-play',
   'media:youtube-stop': 'media:youtube-stop',
+
+  // ============== IMAGES (EDITOR) ==============
+  'images:save': 'images:save',
 
   // ============== MCP SERVER ==============
   'mcp:start': 'mcp:start',

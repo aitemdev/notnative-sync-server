@@ -45,8 +45,29 @@ export class NotesDatabase {
   }
 
   getNoteByName(name: string): NoteMetadata | null {
-    const row = this.db.prepare(`
+    // First try exact name match
+    let row = this.db.prepare(`
       SELECT * FROM notes WHERE name = ?
+    `).get(name) as NoteRow | undefined;
+    
+    if (row) return this.rowToMetadata(row);
+    
+    // If name contains '/', try to match folder/name
+    if (name.includes('/')) {
+      const lastSlash = name.lastIndexOf('/');
+      const folder = name.substring(0, lastSlash);
+      const noteName = name.substring(lastSlash + 1);
+      
+      row = this.db.prepare(`
+        SELECT * FROM notes WHERE name = ? AND folder = ?
+      `).get(noteName, folder) as NoteRow | undefined;
+      
+      if (row) return this.rowToMetadata(row);
+    }
+    
+    // Try case-insensitive match on name only
+    row = this.db.prepare(`
+      SELECT * FROM notes WHERE LOWER(name) = LOWER(?)
     `).get(name) as NoteRow | undefined;
     
     return row ? this.rowToMetadata(row) : null;
@@ -210,6 +231,19 @@ export class NotesDatabase {
 
   removeNoteFromFTS(noteId: number): void {
     this.db.prepare('DELETE FROM notes_fts WHERE rowid = ?').run(noteId);
+  }
+
+  // Get all notes that need to be indexed (for reindexing)
+  getAllNotesForReindex(): { id: number; name: string; path: string }[] {
+    return this.db.prepare(`
+      SELECT id, name, path FROM notes
+    `).all() as { id: number; name: string; path: string }[];
+  }
+
+  // Check if FTS index is populated
+  getFTSCount(): number {
+    const result = this.db.prepare(`SELECT COUNT(*) as count FROM notes_fts`).get() as { count: number };
+    return result.count;
   }
 
   // ============== HELPERS ==============

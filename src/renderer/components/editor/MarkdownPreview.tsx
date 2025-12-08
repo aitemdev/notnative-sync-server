@@ -1,5 +1,6 @@
-import { forwardRef, ReactNode, useCallback } from 'react';
-import ReactMarkdown from 'react-markdown';
+import { forwardRef, ReactNode, useCallback, useMemo } from 'react';
+import React from 'react';
+import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useAppStore } from '../../stores/app-store';
 import { useNotes } from '../../hooks/useNotes';
@@ -11,7 +12,7 @@ interface MarkdownPreviewProps {
 }
 
 // Markdown components configuration for consistent styling
-const markdownComponents = {
+const baseMarkdownComponents = {
   p: ({ children }: { children?: ReactNode }) => (
     <p className="mb-4 leading-relaxed">{children}</p>
   ),
@@ -101,14 +102,7 @@ const markdownComponents = {
   td: ({ children }: { children?: ReactNode }) => (
     <td className="px-4 py-2 text-subtext1">{children}</td>
   ),
-  img: ({ src, alt }: { src?: string; alt?: string }) => (
-    <img 
-      src={src} 
-      alt={alt} 
-      className="max-w-full h-auto rounded-lg my-4 shadow-lg"
-      loading="lazy"
-    />
-  ),
+  // img component is defined dynamically in MarkdownPreview to resolve relative paths
   input: ({ type, checked, disabled }: { type?: string; checked?: boolean; disabled?: boolean }) => {
     if (type === 'checkbox') {
       return (
@@ -128,26 +122,50 @@ const markdownComponents = {
 // Component to render wiki-links [[note]] as clickable buttons
 function WikiLinkContent({ 
   content, 
-  onNoteClick 
+  onNoteClick,
+  components,
 }: { 
   content: string; 
   onNoteClick: (name: string) => void;
+  components: Components;
 }) {
+  // Pre-process content to fix image URLs with spaces
+  // Markdown parsers break on spaces in URLs, so we need to encode them
+  // Match ![alt](path with spaces) and encode spaces in the path
+  const fixedContent = content.replace(
+    /!\[([^\]]*)\]\(([^)]+)\)/g,
+    (match, alt, url) => {
+      // Don't modify URLs that are already encoded or are http(s)
+      if (url.includes('%20') || url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+        return match;
+      }
+      // Encode spaces in the URL
+      const encodedUrl = url.replace(/ /g, '%20');
+      return `![${alt}](${encodedUrl})`;
+    }
+  );
+
   const parts: ReactNode[] = [];
-  const regex = /\[\[([^\]]+)\]\]/g;
+  // Match [[note]] but NOT inside image syntax like ![alt](url)
+  // Wiki-links require double brackets: [[something]]
+  const regex = /(?<!!)\[\[([^\]]+)\]\]/g;
   let lastIndex = 0;
   let match;
   let key = 0;
 
-  while ((match = regex.exec(content)) !== null) {
+  while ((match = regex.exec(fixedContent)) !== null) {
+    // Skip if this looks like it's part of markdown image/link syntax
+    // Wiki-links are [[double brackets]], not [single]
+    const noteName = match[1];
+    
     // Add text before the match
     if (match.index > lastIndex) {
-      const textBefore = content.slice(lastIndex, match.index);
+      const textBefore = fixedContent.slice(lastIndex, match.index);
       parts.push(
         <ReactMarkdown 
           key={`md-${key++}`} 
           remarkPlugins={[remarkGfm]}
-          components={markdownComponents}
+          components={components}
         >
           {textBefore}
         </ReactMarkdown>
@@ -155,7 +173,6 @@ function WikiLinkContent({
     }
     
     // Add the wiki-link as a clickable button
-    const noteName = match[1];
     parts.push(
       <button
         key={`link-${key++}`}
@@ -174,13 +191,14 @@ function WikiLinkContent({
   }
   
   // Add remaining text
-  if (lastIndex < content.length) {
-    const textAfter = content.slice(lastIndex);
+  if (lastIndex < fixedContent.length) {
+    const textAfter = fixedContent.slice(lastIndex);
+    
     parts.push(
       <ReactMarkdown 
         key={`md-${key++}`} 
         remarkPlugins={[remarkGfm]}
-        components={markdownComponents}
+        components={components}
       >
         {textAfter}
       </ReactMarkdown>
@@ -192,9 +210,9 @@ function WikiLinkContent({
     return (
       <ReactMarkdown 
         remarkPlugins={[remarkGfm]}
-        components={markdownComponents}
+        components={components}
       >
-        {content}
+        {fixedContent}
       </ReactMarkdown>
     );
   }
@@ -204,8 +222,71 @@ function WikiLinkContent({
 
 const MarkdownPreview = forwardRef<HTMLDivElement, MarkdownPreviewProps>(
   ({ content, className = '', onScroll }, ref) => {
-    const { notes } = useAppStore();
+    const notes = useAppStore(state => state.notes);
+    const currentNote = useAppStore(state => state.currentNote);
     const { openNote } = useNotes();
+
+    const noteDir = useMemo(() => {
+      if (!currentNote?.path) return null;
+      const normalized = currentNote.path.replace(/\\/g, '/');
+      const lastSlash = normalized.lastIndexOf('/');
+      return lastSlash >= 0 ? normalized.slice(0, lastSlash + 1) : null;
+    }, [currentNote?.path]);
+
+    const resolveImageSrc = useCallback((src?: string) => {
+      if (!src) return src;
+      // Already absolute (http, https, data, local-file)
+      if (/^(https?:)?\/\//i.test(src) || src.startsWith('data:') || src.startsWith('local-file://')) {
+        return src;
+      }
+      
+      // file:// URLs - convert to local-file:// for Electron security
+      if (src.startsWith('file://')) {
+        return src.replace('file://', 'local-file://');
+      }
+
+      // Decode src to handle cases where it's already encoded (e.g. %20 for spaces)
+      let decodedSrc = src;
+      try {
+        decodedSrc = decodeURIComponent(src);
+      } catch (e) {
+        console.warn('Failed to decode image src:', src);
+      }
+
+      // Absolute filesystem path
+      const isAbsoluteFs = decodedSrc.startsWith('/') || /^[a-zA-Z]:[\/]/.test(decodedSrc);
+      if (isAbsoluteFs) {
+        const normalized = decodedSrc.replace(/\\/g, '/');
+        const encoded = normalized.split('/').map(seg => encodeURIComponent(seg)).join('/');
+        return `local-file://${encoded}`;
+      }
+
+      if (!noteDir) return src;
+
+      // Build a local-file:// URL relative to the note directory
+      const base = noteDir.endsWith('/') ? noteDir : `${noteDir}/`;
+      const cleaned = decodedSrc.startsWith('./') ? decodedSrc.slice(2) : decodedSrc;
+      const joined = `${base}${cleaned}`.replace(/\/+/g, '/');
+      // Encode each segment to handle spaces and special chars
+      const encoded = joined.split('/').map(seg => encodeURIComponent(seg)).join('/');
+      const resolved = `local-file://${encoded}`;
+      return resolved;
+    }, [noteDir]);
+
+    const markdownComponents: Components = useMemo(() => ({
+      ...baseMarkdownComponents,
+      img: ({ src, alt, ...props }) => {
+        const resolved = resolveImageSrc(src);
+        return (
+          <img 
+            src={resolved} 
+            alt={alt || ''} 
+            className="max-w-full h-auto rounded-lg my-4 shadow-lg"
+            loading="lazy"
+          />
+        );
+      },
+    }), [resolveImageSrc]);
 
     // Handle wiki-link click - navigate to the note
     const handleNoteClick = useCallback(async (noteName: string) => {
@@ -230,14 +311,56 @@ const MarkdownPreview = forwardRef<HTMLDivElement, MarkdownPreviewProps>(
       }
     }, [onScroll]);
 
+    // Handle keyboard navigation for scrolling
+    const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+      const container = e.currentTarget;
+      const scrollAmount = 40; // pixels to scroll per key press
+      const pageScrollAmount = container.clientHeight * 0.8;
+
+      switch (e.key) {
+        case 'ArrowDown':
+        case 'j':
+          e.preventDefault();
+          container.scrollTop += scrollAmount;
+          break;
+        case 'ArrowUp':
+        case 'k':
+          e.preventDefault();
+          container.scrollTop -= scrollAmount;
+          break;
+        case 'PageDown':
+        case ' ':
+          e.preventDefault();
+          container.scrollTop += pageScrollAmount;
+          break;
+        case 'PageUp':
+          e.preventDefault();
+          container.scrollTop -= pageScrollAmount;
+          break;
+        case 'Home':
+        case 'g':
+          if (e.key === 'g' && !e.ctrlKey) break; // Only handle 'g' with Ctrl or just Home
+          e.preventDefault();
+          container.scrollTop = 0;
+          break;
+        case 'End':
+        case 'G':
+          e.preventDefault();
+          container.scrollTop = container.scrollHeight;
+          break;
+      }
+    }, []);
+
     return (
       <div 
         ref={ref}
-        className={`h-full overflow-y-auto px-8 py-6 bg-base text-text prose-container ${className}`}
+        className={`h-full overflow-y-auto px-8 py-6 bg-base text-text prose-container ${className} focus:outline-none`}
         onScroll={handleScroll}
+        onKeyDown={handleKeyDown}
+        tabIndex={0}
       >
         <div className="max-w-3xl mx-auto">
-          <WikiLinkContent content={content} onNoteClick={handleNoteClick} />
+          <WikiLinkContent content={content} onNoteClick={handleNoteClick} components={markdownComponents} />
         </div>
       </div>
     );

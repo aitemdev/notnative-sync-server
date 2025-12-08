@@ -1,6 +1,7 @@
-import { app, BrowserWindow, shell, nativeTheme, globalShortcut } from 'electron';
+import { app, BrowserWindow, shell, nativeTheme, globalShortcut, protocol, net } from 'electron';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from 'fs';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { config } from 'dotenv';
 import { initDatabase, getDatabase, closeDatabase } from './database/connection';
 import { registerIpcHandlers } from './ipc/handlers';
@@ -28,6 +29,19 @@ process.stderr?.on?.('error', (err: NodeJS.ErrnoException) => {
   if (err.code === 'EPIPE') return;
 });
 
+// Register custom protocol scheme before app is ready
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'local-file',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      bypassCSP: true,
+    },
+  },
+]);
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Global references
@@ -41,9 +55,65 @@ const isDev = process.env.NODE_ENV === 'development';
 const isWindows = process.platform === 'win32';
 const isMac = process.platform === 'darwin';
 
+function getMimeType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case '.png': return 'image/png';
+    case '.jpg':
+    case '.jpeg': return 'image/jpeg';
+    case '.gif': return 'image/gif';
+    case '.svg': return 'image/svg+xml';
+    case '.webp': return 'image/webp';
+    case '.bmp': return 'image/bmp';
+    default: return 'application/octet-stream';
+  }
+}
+
 async function initialize() {
   // Set app name
   app.setName('NotNative');
+
+  // Register custom protocol to serve local files (needed for images in notes)
+  protocol.handle('local-file', async (request) => {
+    try {
+      console.log('📁 Protocol request URL:', request.url);
+      
+      // Extract the path from the URL
+      // local-file:///home/... -> /home/...
+      // local-file://home/... -> /home/... (browser might normalize)
+      let filePath: string;
+      
+      if (request.url.startsWith('local-file:///')) {
+        // Standard format with triple slash for absolute paths
+        filePath = decodeURIComponent(request.url.slice('local-file://'.length));
+      } else if (request.url.startsWith('local-file://')) {
+        // Browser normalized format - add leading slash for absolute path
+        const pathPart = request.url.slice('local-file://'.length);
+        filePath = '/' + decodeURIComponent(pathPart);
+      } else {
+        throw new Error(`Invalid local-file URL format: ${request.url}`);
+      }
+      
+      const normalizedPath = path.normalize(filePath);
+      
+      console.log('📁 Resolved file path:', normalizedPath);
+      
+      // Check if file exists and is readable
+      await fs.promises.access(normalizedPath, fs.constants.R_OK);
+      
+      const data = await fs.promises.readFile(normalizedPath);
+      const mimeType = getMimeType(normalizedPath);
+      
+      console.log('📁 Serving file:', normalizedPath, 'MIME:', mimeType, 'Size:', data.length);
+      
+      return new Response(data, {
+        headers: { 'Content-Type': mimeType }
+      });
+    } catch (error) {
+      console.error('📁 Error handling local-file request:', request.url, error);
+      return new Response('Not found', { status: 404 });
+    }
+  });
 
   // Initialize database
   const userDataPath = app.getPath('userData');

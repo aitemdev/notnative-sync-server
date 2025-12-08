@@ -43,9 +43,9 @@ export function createNoteTools(ctx: ToolContext) {
 
     // === Read ===
     read_note: tool({
-      description: 'Read the full content of a specific note by its exact name',
+      description: 'Read the full content of a specific note by its name. You can use "folder/name" format for notes in folders.',
       inputSchema: z.object({
-        name: z.string().describe('The exact name of the note (without .md extension)'),
+        name: z.string().describe('The name of the note (without .md extension). Use "folder/name" format for notes in folders (e.g., "Proyectos/Tareas")'),
       }),
       execute: async ({ name }: { name: string }) => {
         const metadata = ctx.notesDb.getNoteByName(name);
@@ -54,7 +54,8 @@ export function createNoteTools(ctx: ToolContext) {
         }
         try {
           const content = fs.readFileSync(metadata.path, 'utf-8');
-          return `# ${name}\n\n${content}\n\n---\n**📚 Fuente:** [[${name}]]`;
+          const displayName = metadata.folder ? `${metadata.folder}/${metadata.name}` : metadata.name;
+          return `# ${displayName}\n\n${content}\n\n---\n**📚 Fuente:** [[${metadata.name}]]`;
         } catch (error) {
           return `Error reading note: ${error}`;
         }
@@ -96,9 +97,26 @@ export function createNoteTools(ctx: ToolContext) {
           return `Error: A note named '${name}' already exists. Use update_note to modify it.`;
         }
 
+        // Normalize folder path - find existing folder with case-insensitive match
+        let actualFolder = folder;
+        if (folder) {
+          const normalizedFolder = normalizeFolderPath(folder);
+          if (normalizedFolder === null) {
+            return `Error: Invalid folder path '${folder}'. Must be a relative path.`;
+          }
+          
+          // Get existing folders and find case-insensitive match
+          const existingFolders = ctx.notesDb.getFolders();
+          const folderLower = normalizedFolder.toLowerCase();
+          const matchingFolder = existingFolders.find(f => f.toLowerCase() === folderLower);
+          
+          // Use existing folder's case if found, otherwise use normalized input
+          actualFolder = matchingFolder || normalizedFolder;
+        }
+
         const fileName = `${name}.md`;
-        const filePath = folder 
-          ? ctx.notesDir.resolve(path.join(folder, fileName))
+        const filePath = actualFolder 
+          ? ctx.notesDir.resolve(path.join(actualFolder, fileName))
           : ctx.notesDir.resolve(fileName);
 
         try {
@@ -109,10 +127,10 @@ export function createNoteTools(ctx: ToolContext) {
           fs.writeFileSync(filePath, content);
           
           // Add to database
-          const metadata = ctx.notesDb.createNote(name, filePath, folder || null);
+          const metadata = ctx.notesDb.createNote(name, filePath, actualFolder || null);
           ctx.notesDb.indexNoteContent(metadata.id, name, content);
           
-          return `✅ Note '${name}' created successfully${folder ? ` in folder '${folder}'` : ''}.`;
+          return `✅ Note '${name}' created successfully${actualFolder ? ` in folder '${actualFolder}'` : ''}.`;
         } catch (error) {
           return `Error creating note: ${error}`;
         }
@@ -121,9 +139,9 @@ export function createNoteTools(ctx: ToolContext) {
 
     // === Update ===
     update_note: tool({
-      description: 'Update/replace the entire content of an existing note',
+      description: 'Update/replace the entire content of an existing note. You can use "folder/name" format for notes in folders.',
       inputSchema: z.object({
-        name: z.string().describe('The name of the note to update'),
+        name: z.string().describe('The name of the note to update. Use "folder/name" format for notes in folders (e.g., "Proyectos/Tareas")'),
         content: z.string().describe('The new markdown content'),
       }),
       execute: async ({ name, content }: { name: string; content: string }) => {
@@ -138,23 +156,24 @@ export function createNoteTools(ctx: ToolContext) {
           noteFile.write(content);
           
           ctx.notesDb.touchNote(metadata.id);
-          ctx.notesDb.indexNoteContent(metadata.id, name, content);
+          ctx.notesDb.indexNoteContent(metadata.id, metadata.name, content);
           
           // Notify renderer with the new content directly
           const mainWindow = ctx.getMainWindow();
+          const displayName = metadata.folder ? `${metadata.folder}/${metadata.name}` : metadata.name;
           console.log('[AI Tools] update_note: Notifying renderer, mainWindow:', !!mainWindow);
           if (mainWindow && !mainWindow.isDestroyed()) {
-            console.log('[AI Tools] Sending note:content-updated for:', name, 'id:', metadata.id);
+            console.log('[AI Tools] Sending note:content-updated for:', displayName, 'id:', metadata.id);
             mainWindow.webContents.send(IPC_CHANNELS['note:content-updated'], {
               id: metadata.id,
-              name: name,
+              name: metadata.name,
               content: content,
             });
           } else {
             console.warn('[AI Tools] mainWindow not available or destroyed');
           }
           
-          return `✅ Note '${name}' updated successfully.`;
+          return `✅ Note '${displayName}' updated successfully.`;
         } catch (error) {
           return `Error updating note: ${error}`;
         }
@@ -162,9 +181,9 @@ export function createNoteTools(ctx: ToolContext) {
     }),
 
     append_to_note: tool({
-      description: 'Append content to the end of an existing note',
+      description: 'Append content to the end of an existing note. You can use "folder/name" format for notes in folders.',
       inputSchema: z.object({
-        name: z.string().describe('The name of the note'),
+        name: z.string().describe('The name of the note. Use "folder/name" format for notes in folders (e.g., "Proyectos/Tareas")'),
         content: z.string().describe('Content to append at the end'),
       }),
       execute: async ({ name, content }: { name: string; content: string }) => {
@@ -179,21 +198,22 @@ export function createNoteTools(ctx: ToolContext) {
           
           fs.writeFileSync(metadata.path, newContent);
           ctx.notesDb.touchNote(metadata.id);
-          ctx.notesDb.indexNoteContent(metadata.id, name, newContent);
+          ctx.notesDb.indexNoteContent(metadata.id, metadata.name, newContent);
           
           // Notify renderer with the new content
           const mainWindow = ctx.getMainWindow();
+          const displayName = metadata.folder ? `${metadata.folder}/${metadata.name}` : metadata.name;
           console.log('[AI Tools] append_to_note: Notifying renderer, mainWindow:', !!mainWindow);
           if (mainWindow && !mainWindow.isDestroyed()) {
-            console.log('[AI Tools] Sending note:content-updated for:', name, 'id:', metadata.id);
+            console.log('[AI Tools] Sending note:content-updated for:', displayName, 'id:', metadata.id);
             mainWindow.webContents.send(IPC_CHANNELS['note:content-updated'], {
               id: metadata.id,
-              name: name,
+              name: metadata.name,
               content: newContent,
             });
           }
           
-          return `✅ Content appended to '${name}'.`;
+          return `✅ Content appended to '${displayName}'.`;
         } catch (error) {
           return `Error appending to note: ${error}`;
         }
