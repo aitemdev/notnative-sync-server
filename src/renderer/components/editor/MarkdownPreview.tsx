@@ -109,118 +109,64 @@ const baseMarkdownComponents = {
   },
 };
 
-// Component to render wiki-links [[note]] as clickable buttons
-function WikiLinkContent({ 
-  content, 
-  onNoteClick,
-  components,
-}: { 
-  content: string; 
-  onNoteClick: (name: string) => void;
-  components: Components;
-}) {
-  // Pre-process content to fix URLs with spaces for images and links
-  // Markdown parsers break on spaces in URLs, so we need to encode them
-  // Images
-  let fixedContent = content.replace(
-    /!\[([^\]]*)\]\(([^)]+)\)/g,
-    (match, alt, url) => {
-      // Don't modify URLs that are already encoded or are http(s)
-      if (url.includes('%20') || url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
-        return match;
+// Helper function to process children and convert wikilinks [[note]] to clickable spans
+function processChildrenForWikilinks(
+  children: ReactNode,
+  onNoteClick: (name: string) => void
+): ReactNode {
+  return React.Children.map(children, child => {
+    if (typeof child === 'string') {
+      // Check if the text contains wikilinks
+      const regex = /(?<!!)\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+      const parts: ReactNode[] = [];
+      let lastIndex = 0;
+      let match;
+      let key = 0;
+
+      while ((match = regex.exec(child)) !== null) {
+        // Add text before the wikilink
+        if (match.index > lastIndex) {
+          parts.push(child.slice(lastIndex, match.index));
+        }
+
+        const target = match[1].trim();
+        const display = match[2]?.trim() || target;
+
+        // Add the wikilink as a clickable span
+        parts.push(
+          <span
+            key={`wikilink-${key++}`}
+            onClick={() => onNoteClick(target)}
+            className="inline-flex items-center gap-1 px-2 py-0.5 mx-0.5 rounded bg-surface0 hover:bg-surface1 
+                       text-green hover:text-teal transition-colors cursor-pointer font-medium text-sm
+                       border border-surface1 hover:border-green/50"
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onNoteClick(target);
+              }
+            }}
+          >
+            <span className="text-xs">📄</span>
+            {display}
+          </span>
+        );
+
+        lastIndex = regex.lastIndex;
       }
-      // Encode spaces in the URL
-      const encodedUrl = url.replace(/ /g, '%20');
-      return `![${alt}](${encodedUrl})`;
-    }
-  );
 
-  // Regular links
-  fixedContent = fixedContent.replace(
-    /\[([^\]]*)\]\(([^)]+)\)/g,
-    (match, text, url) => {
-      // Skip if already encoded or external
-      if (url.includes('%20') || url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
-        return match;
+      // Add remaining text
+      if (lastIndex < child.length) {
+        parts.push(child.slice(lastIndex));
       }
-      const encodedUrl = url.replace(/ /g, '%20');
-      return `[${text}](${encodedUrl})`;
-    }
-  );
 
-  const parts: ReactNode[] = [];
-  // Match [[note]] but NOT inside image syntax like ![alt](url)
-  // Wiki-links require double brackets: [[something]]
-  const regex = /(?<!!)\[\[([^\]]+)\]\]/g;
-  let lastIndex = 0;
-  let match;
-  let key = 0;
-
-  while ((match = regex.exec(fixedContent)) !== null) {
-    // Skip if this looks like it's part of markdown image/link syntax
-    // Wiki-links are [[double brackets]], not [single]
-    const noteName = match[1];
-    
-    // Add text before the match
-    if (match.index > lastIndex) {
-      const textBefore = fixedContent.slice(lastIndex, match.index);
-      parts.push(
-        <ReactMarkdown 
-          key={`md-${key++}`} 
-          remarkPlugins={[remarkGfm]}
-          components={components}
-        >
-          {textBefore}
-        </ReactMarkdown>
-      );
+      // Return processed parts if we found wikilinks, otherwise return original string
+      return parts.length > 0 ? <>{parts}</> : child;
     }
-    
-    // Add the wiki-link as a clickable button
-    parts.push(
-      <button
-        key={`link-${key++}`}
-        type="button"
-        onClick={() => onNoteClick(noteName)}
-        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface0 hover:bg-surface1 
-                   text-green hover:text-teal transition-colors cursor-pointer font-medium text-sm
-                   border border-surface1 hover:border-green/50"
-      >
-        <span className="text-xs">📄</span>
-        {noteName}
-      </button>
-    );
-    
-    lastIndex = regex.lastIndex;
-  }
-  
-  // Add remaining text
-  if (lastIndex < fixedContent.length) {
-    const textAfter = fixedContent.slice(lastIndex);
-    
-    parts.push(
-      <ReactMarkdown 
-        key={`md-${key++}`} 
-        remarkPlugins={[remarkGfm]}
-        components={components}
-      >
-        {textAfter}
-      </ReactMarkdown>
-    );
-  }
-  
-  // If no wiki-links found, render normal markdown
-  if (parts.length === 0) {
-    return (
-      <ReactMarkdown 
-        remarkPlugins={[remarkGfm]}
-        components={components}
-      >
-        {fixedContent}
-      </ReactMarkdown>
-    );
-  }
-  
-  return <>{parts}</>;
+    return child;
+  });
 }
 
 const MarkdownPreview = forwardRef<HTMLDivElement, MarkdownPreviewProps>(
@@ -276,8 +222,60 @@ const MarkdownPreview = forwardRef<HTMLDivElement, MarkdownPreviewProps>(
       return resolved;
     }, [noteDir]);
 
+    // Handle wiki-link click - navigate to the note
+    const handleNoteClick = useCallback(async (noteName: string) => {
+      // Find note by name (case-insensitive)
+      // Support both "note" and "folder/note" formats
+      const note = notes.find(n => {
+        const fullName = n.folder ? `${n.folder}/${n.name}` : n.name;
+        return (
+          n.name.toLowerCase() === noteName.toLowerCase() ||
+          fullName.toLowerCase() === noteName.toLowerCase()
+        );
+      });
+      
+      if (note) {
+        await openNote(note);
+      } else {
+        console.warn(`Note not found: ${noteName}`);
+      }
+    }, [notes, openNote]);
+
     const markdownComponents: Components = useMemo(() => ({
       ...baseMarkdownComponents,
+      // Process text nodes to detect and render wikilinks
+      p: ({ children }) => {
+        const processedChildren = processChildrenForWikilinks(children, handleNoteClick);
+        return <p className="mb-4 leading-relaxed">{processedChildren}</p>;
+      },
+      li: ({ children }) => {
+        const processedChildren = processChildrenForWikilinks(children, handleNoteClick);
+        return <li className="leading-relaxed">{processedChildren}</li>;
+      },
+      h1: ({ children }) => {
+        const processedChildren = processChildrenForWikilinks(children, handleNoteClick);
+        return <h1 className="text-2xl font-bold mb-4 mt-6 text-text border-b border-surface0 pb-2">{processedChildren}</h1>;
+      },
+      h2: ({ children }) => {
+        const processedChildren = processChildrenForWikilinks(children, handleNoteClick);
+        return <h2 className="text-xl font-bold mb-3 mt-5 text-text">{processedChildren}</h2>;
+      },
+      h3: ({ children }) => {
+        const processedChildren = processChildrenForWikilinks(children, handleNoteClick);
+        return <h3 className="text-lg font-semibold mb-2 mt-4 text-text">{processedChildren}</h3>;
+      },
+      h4: ({ children }) => {
+        const processedChildren = processChildrenForWikilinks(children, handleNoteClick);
+        return <h4 className="text-base font-semibold mb-2 mt-3 text-text">{processedChildren}</h4>;
+      },
+      h5: ({ children }) => {
+        const processedChildren = processChildrenForWikilinks(children, handleNoteClick);
+        return <h5 className="text-sm font-semibold mb-2 mt-3 text-text">{processedChildren}</h5>;
+      },
+      h6: ({ children }) => {
+        const processedChildren = processChildrenForWikilinks(children, handleNoteClick);
+        return <h6 className="text-sm font-medium mb-2 mt-3 text-subtext0">{processedChildren}</h6>;
+      },
       img: ({ src, alt, ...props }) => {
         const resolved = resolveImageSrc(src);
         return (
@@ -290,6 +288,41 @@ const MarkdownPreview = forwardRef<HTMLDivElement, MarkdownPreviewProps>(
         );
       },
       a: ({ href, children }: { href?: string; children?: ReactNode }) => {
+        // Check if it's a wikilink (special internal link format)
+        if (href?.startsWith('wikilink:')) {
+          const target = href.replace('wikilink:', '');
+          const extractText = (node: ReactNode): string => {
+            if (typeof node === 'string') return node;
+            if (typeof node === 'number') return String(node);
+            if (Array.isArray(node)) return node.map(extractText).join('');
+            if (node && typeof node === 'object' && 'props' in node) {
+              return extractText((node as any).props?.children);
+            }
+            return '';
+          };
+          const displayText = extractText(children);
+          
+          return (
+            <span
+              onClick={() => handleNoteClick(target)}
+              className="inline-flex items-center gap-1 px-2 py-0.5 mx-0.5 rounded bg-surface0 hover:bg-surface1 
+                         text-green hover:text-teal transition-colors cursor-pointer font-medium text-sm
+                         border border-surface1 hover:border-green/50"
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleNoteClick(target);
+                }
+              }}
+            >
+              <span className="text-xs">📄</span>
+              {displayText}
+            </span>
+          );
+        }
+        
         // Check if it's an external URL
         const isExternal = href && (href.startsWith('http://') || href.startsWith('https://'));
         
@@ -383,23 +416,7 @@ const MarkdownPreview = forwardRef<HTMLDivElement, MarkdownPreviewProps>(
           </a>
         );
       },
-    }), [resolveImageSrc]);
-
-    // Handle wiki-link click - navigate to the note
-    const handleNoteClick = useCallback(async (noteName: string) => {
-      // Find note by name (case-insensitive, without extension)
-      const note = notes.find(n => 
-        n.name.toLowerCase() === noteName.toLowerCase() ||
-        n.name.toLowerCase() === `${noteName.toLowerCase()}.md`
-      );
-      
-      if (note) {
-        await openNote(note);
-      } else {
-        console.warn(`Note not found: ${noteName}`);
-        // Could show a toast or offer to create the note
-      }
-    }, [notes, openNote]);
+    }), [resolveImageSrc, handleNoteClick]);
 
     const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
       if (onScroll) {
@@ -457,7 +474,12 @@ const MarkdownPreview = forwardRef<HTMLDivElement, MarkdownPreviewProps>(
         tabIndex={0}
       >
         <div className="max-w-3xl mx-auto">
-          <WikiLinkContent content={content} onNoteClick={handleNoteClick} components={markdownComponents} />
+          <ReactMarkdown 
+            remarkPlugins={[remarkGfm]}
+            components={markdownComponents}
+          >
+            {content}
+          </ReactMarkdown>
         </div>
       </div>
     );

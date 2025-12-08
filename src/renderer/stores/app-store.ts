@@ -3,6 +3,7 @@ import type { NoteMetadata, Tag } from '../../shared/types';
 import { EditorMode } from '../lib/editor/types';
 
 export type SidebarPanel = 'notes' | 'bases' | 'search' | 'chat';
+export type RightPanel = 'chat' | 'properties' | 'backlinks';
 export type Theme = 'light' | 'dark' | 'system';
 export type ViewMode = 'edit' | 'preview' | 'split';
 
@@ -21,7 +22,7 @@ interface AppState {
   // Right Panel (Chat)
   rightPanelOpen: boolean;
   rightPanelWidth: number;
-  activeRightPanel: 'chat' | 'properties';
+  activeRightPanel: RightPanel;
   
   // Editor
   currentNote: NoteMetadata | null;
@@ -65,7 +66,7 @@ interface AppState {
   toggleRightPanel: () => void;
   setRightPanelWidth: (width: number) => void;
   setRightPanelOpen: (open: boolean) => void;
-  setActiveRightPanel: (panel: 'chat' | 'properties') => void;
+  setActiveRightPanel: (panel: RightPanel) => void;
   
   setCurrentNote: (note: NoteMetadata | null) => void;
   setCurrentNoteContent: (content: string) => void;

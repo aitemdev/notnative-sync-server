@@ -4,10 +4,11 @@ import Sidebar from '../sidebar/Sidebar';
 import Editor from '../editor/Editor';
 import StatusBar from '../common/StatusBar';
 import { Chat } from '../chat/Chat';
+import { BacklinksPanel } from '../backlinks/BacklinksPanel';
 import QuickNoteModal from '../common/QuickNoteModal';
 import SearchOverlay from '../common/SearchOverlay';
 import { useNotes } from '../../hooks/useNotes';
-import { X } from 'lucide-react';
+import { X, Link2, MessageSquare } from 'lucide-react';
 
 // Breakpoint for responsive behavior
 const MOBILE_BREAKPOINT = 1024;
@@ -18,7 +19,9 @@ export default function MainLayout() {
     sidebarOpen, 
     sidebarWidth, 
     rightPanelOpen, 
-    rightPanelWidth, 
+    rightPanelWidth,
+    activeRightPanel,
+    setActiveRightPanel,
     toggleRightPanel, 
     toggleSidebar,
     currentNote, 
@@ -132,6 +135,17 @@ export default function MainLayout() {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'c') {
         e.preventDefault();
         toggleRightPanel();
+        setActiveRightPanel('chat');
+      }
+      
+      // Ctrl+Shift+L - Toggle backlinks panel
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'l') {
+        e.preventDefault();
+        if (rightPanelOpen && activeRightPanel === 'backlinks') {
+          toggleRightPanel();
+        } else {
+          useAppStore.setState({ rightPanelOpen: true, activeRightPanel: 'backlinks' });
+        }
       }
       
       // Ctrl+, - Open settings
@@ -213,11 +227,12 @@ export default function MainLayout() {
         )}
 
         {/* Editor area - Takes remaining space */}
+        {/* Editor Section */}
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">
           <Editor />
         </div>
 
-        {/* Right Panel - Chat (Responsive) */}
+        {/* Right Panel - Chat or Backlinks (Responsive) */}
         {rightPanelOpen && (
           <>
             {/* Overlay for mobile/tablet */}
@@ -235,20 +250,47 @@ export default function MainLayout() {
               style={{ width: effectiveChatWidth }}
             >
               <div className="flex flex-col h-full">
-                {/* Close button for mobile/tablet */}
-                {isTablet && (
-                  <div className="flex items-center justify-between px-3 py-2 border-b border-surface0">
-                    <span className="text-sm font-medium">AI Chat</span>
+                {/* Header with tabs */}
+                <div className="flex items-center border-b border-surface0 bg-mantle">
+                  <button
+                    onClick={() => setActiveRightPanel('chat')}
+                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                      activeRightPanel === 'chat'
+                        ? 'text-lavender bg-surface0/50 border-b-2 border-lavender'
+                        : 'text-subtext0 hover:text-text hover:bg-surface0/30'
+                    }`}
+                  >
+                    <MessageSquare size={14} />
+                    Chat
+                  </button>
+                  <button
+                    onClick={() => setActiveRightPanel('backlinks')}
+                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                      activeRightPanel === 'backlinks'
+                        ? 'text-lavender bg-surface0/50 border-b-2 border-lavender'
+                        : 'text-subtext0 hover:text-text hover:bg-surface0/30'
+                    }`}
+                  >
+                    <Link2 size={14} />
+                    Enlaces
+                  </button>
+                  {/* Close button for mobile/tablet */}
+                  {isTablet && (
                     <button 
                       onClick={toggleRightPanel}
-                      className="p-1 rounded hover:bg-surface0 transition-colors"
-                      aria-label="Close chat"
+                      className="px-3 py-2 rounded hover:bg-surface0 transition-colors"
+                      aria-label="Close panel"
                     >
                       <X size={16} />
                     </button>
-                  </div>
-                )}
-                <Chat />
+                  )}
+                </div>
+                
+                {/* Panel content */}
+                <div className="flex-1 overflow-hidden">
+                  {activeRightPanel === 'chat' && <Chat />}
+                  {activeRightPanel === 'backlinks' && <BacklinksPanel />}
+                </div>
               </div>
             </div>
           </>

@@ -4,10 +4,12 @@ import * as path from 'path';
 import { dateToSqliteTimestamp, sqliteTimestampToDate } from './connection';
 import type { NoteMetadata, Note, NoteSearchResult } from '../../shared/types';
 import type { AttachmentsDatabase } from './attachments';
+import type { LinksDatabase } from './links';
 
 export class NotesDatabase {
   private db: Database.Database;
   private attachmentsDb?: AttachmentsDatabase;
+  private linksDb?: LinksDatabase;
 
   constructor(db: Database.Database) {
     this.db = db;
@@ -15,6 +17,10 @@ export class NotesDatabase {
 
   setAttachmentsDatabase(attachmentsDb: AttachmentsDatabase): void {
     this.attachmentsDb = attachmentsDb;
+  }
+
+  setLinksDatabase(linksDb: LinksDatabase): void {
+    this.linksDb = linksDb;
   }
 
   // ============== CREATE ==============
@@ -260,6 +266,15 @@ export class NotesDatabase {
     this.db.prepare(`
       INSERT INTO notes_fts (rowid, name, content) VALUES (?, ?, ?)
     `).run(noteId, name, content);
+
+    // Update links if LinksDatabase is available
+    if (this.linksDb) {
+      try {
+        this.linksDb.updateLinksForNote(noteId, content);
+      } catch (error) {
+        console.error('Error updating links for note:', error);
+      }
+    }
   }
 
   removeNoteFromFTS(noteId: number): void {
@@ -277,6 +292,38 @@ export class NotesDatabase {
   getFTSCount(): number {
     const result = this.db.prepare(`SELECT COUNT(*) as count FROM notes_fts`).get() as { count: number };
     return result.count;
+  }
+
+  // ============== FILE OPERATIONS ==============
+
+  /**
+   * Read note content from file synchronously
+   */
+  readNoteContentSync(notePath: string): string | null {
+    try {
+      if (!fs.existsSync(notePath)) {
+        return null;
+      }
+      return fs.readFileSync(notePath, 'utf-8');
+    } catch (error) {
+      console.error('Error reading note file:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Read note content from file asynchronously
+   */
+  async readNoteContent(notePath: string): Promise<string | null> {
+    try {
+      if (!fs.existsSync(notePath)) {
+        return null;
+      }
+      return await fs.promises.readFile(notePath, 'utf-8');
+    } catch (error) {
+      console.error('Error reading note file:', error);
+      return null;
+    }
   }
 
   // ============== HELPERS ==============

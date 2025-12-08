@@ -15,6 +15,11 @@ export const IPC_CHANNELS = {
   'notes:reindex': 'notes:reindex',
   'notes:get-metadata': 'notes:get-metadata',
 
+  // ============== LINKS ==============
+  'links:get-outgoing': 'links:get-outgoing',
+  'links:get-incoming': 'links:get-incoming',
+  'links:get-all': 'links:get-all',
+
   // ============== FOLDERS ==============
   'folders:list': 'folders:list',
   'folders:create': 'folders:create',

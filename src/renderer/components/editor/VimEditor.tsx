@@ -10,6 +10,7 @@ import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
 import { EditorMode, type VimEditorProps } from '../../lib/editor/types';
 import { notnativeDark, notnativeSyntax } from '../../lib/editor/themes';
+import { createWikilinkExtension } from '../../lib/editor/wikilink-extension';
 import { useAppStore } from '../../stores/app-store';
 import SelectionBubble from './SelectionBubble';
 
@@ -212,6 +213,31 @@ export default function VimEditor({
       
       // Theme
       notnativeDark,
+      
+      // Wikilink extension with autocompletion and decorations
+      createWikilinkExtension(
+        useAppStore.getState().notes,
+        (target) => {
+          // Handle wikilink click - open the note
+          console.log('🔗 Wikilink clicked:', target);
+          const notes = useAppStore.getState().notes;
+          const targetNote = notes.find(n => 
+            n.name === target || 
+            (target.includes('/') && `${n.folder}/${n.name}` === target) ||
+            n.name.toLowerCase() === target.toLowerCase()
+          );
+          
+          if (targetNote) {
+            const { setCurrentNote, setCurrentNoteContent } = useAppStore.getState();
+            window.electron.notes.readById(targetNote.id).then(note => {
+              if (note) {
+                setCurrentNote(note);
+                setCurrentNoteContent(note.content);
+              }
+            });
+          }
+        }
+      ),
       
       // History (undo/redo)
       history(),

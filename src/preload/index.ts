@@ -24,6 +24,13 @@ export interface ElectronAPI {
     search: (query: string) => Promise<NoteSearchResult[]>;
     reindex: () => Promise<{ indexed: number; total: number }>;
   };
+
+  // Links
+  links: {
+    getOutgoing: (noteId: number) => Promise<NoteLinkWithMetadata[]>;
+    getIncoming: (noteId: number) => Promise<BacklinkInfo[]>;
+    getAll: () => Promise<NoteLink[]>;
+  };
   
   // Folders
   folders: {
@@ -152,6 +159,9 @@ import type {
   NoteMetadata, 
   Note, 
   NoteSearchResult,
+  NoteLink,
+  NoteLinkWithMetadata,
+  BacklinkInfo,
   FolderMetadata,
   Tag,
   ChatSession,
@@ -189,6 +199,13 @@ const electronAPI: ElectronAPI = {
     move: (name, folder) => ipcRenderer.invoke(IPC_CHANNELS['notes:move'], name, folder),
     search: (query) => ipcRenderer.invoke(IPC_CHANNELS['notes:search'], query),
     reindex: () => ipcRenderer.invoke(IPC_CHANNELS['notes:reindex']),
+  },
+
+  // Links API
+  links: {
+    getOutgoing: (noteId) => ipcRenderer.invoke(IPC_CHANNELS['links:get-outgoing'], noteId),
+    getIncoming: (noteId) => ipcRenderer.invoke(IPC_CHANNELS['links:get-incoming'], noteId),
+    getAll: () => ipcRenderer.invoke(IPC_CHANNELS['links:get-all']),
   },
   
   // Folders API

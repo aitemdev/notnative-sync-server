@@ -9,6 +9,7 @@ import { NotesDatabase } from '../database/notes';
 import { TagsDatabase } from '../database/tags';
 import { AttachmentsDatabase } from '../database/attachments';
 import { InlinePropertiesDatabase } from '../database/inline-properties';
+import { LinksDatabase } from '../database/links';
 import { indexNote, semanticSearch, reindexAllNotes, getIndexingStats, deleteEmbeddings, deleteEmbeddingsMatching } from '../database/embeddings';
 import { setEmbeddingModel, getEmbeddingModel, setAIModel, getAIModel, getApiKey as getClientApiKey, initAIClient, getAIClient } from '../ai/client';
 import { getAllModels } from '../ai/models';
@@ -22,9 +23,11 @@ export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirect
   const tagsDb = new TagsDatabase(db);
   const propsDb = new InlinePropertiesDatabase(db);
   const attachmentsDb = new AttachmentsDatabase(db);
+  const linksDb = new LinksDatabase(db, notesDb);
 
-  // Link attachments database to notes database for cascade deletion
+  // Link databases for cascade operations
   notesDb.setAttachmentsDatabase(attachmentsDb);
+  notesDb.setLinksDatabase(linksDb);
 
   // ============== NOTES ==============
 
@@ -247,6 +250,44 @@ export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirect
     
     console.log(`✅ Reindexed ${indexed}/${notes.length} notes`);
     return { indexed, total: notes.length };
+  });
+
+  // ============== LINKS ==============
+
+  ipcMain.handle(IPC_CHANNELS['links:get-outgoing'], async (_, noteId: number) => {
+    console.log(`🔗 Getting outgoing links for note: ${noteId}`);
+    try {
+      const links = linksDb.getOutgoingLinks(noteId);
+      console.log(`🔗 Found ${links.length} outgoing links`);
+      return links;
+    } catch (error) {
+      console.error('❌ Error getting outgoing links:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS['links:get-incoming'], async (_, noteId: number) => {
+    console.log(`🔗 Getting incoming links (backlinks) for note: ${noteId}`);
+    try {
+      const backlinks = linksDb.getIncomingLinks(noteId);
+      console.log(`🔗 Found ${backlinks.length} backlinks`);
+      return backlinks;
+    } catch (error) {
+      console.error('❌ Error getting backlinks:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS['links:get-all'], async () => {
+    console.log(`🔗 Getting all links`);
+    try {
+      const links = linksDb.getAllLinks();
+      console.log(`🔗 Found ${links.length} total links`);
+      return links;
+    } catch (error) {
+      console.error('❌ Error getting all links:', error);
+      return [];
+    }
   });
 
   // ============== FOLDERS ==============

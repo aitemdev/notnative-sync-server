@@ -26,6 +26,30 @@ export interface NoteSearchResult {
   relevance: number;
 }
 
+// ============== LINKS ==============
+export interface NoteLink {
+  id: number;
+  sourceNoteId: number;
+  targetNoteId: number;
+  linkType: string;
+  createdAt: Date;
+}
+
+export interface NoteLinkWithMetadata extends NoteLink {
+  targetName: string;
+  targetFolder: string | null;
+  targetPath: string;
+}
+
+export interface BacklinkInfo {
+  noteId: number;
+  noteName: string;
+  noteFolder: string | null;
+  notePath: string;
+  context: string;
+  lineNumber: number;
+}
+
 // ============== FRONTMATTER ==============
 export interface Frontmatter {
   tags: string[];
