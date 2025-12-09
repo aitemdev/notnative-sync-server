@@ -93,9 +93,9 @@ EOF
 
 echo -e "${GREEN}.env file created${NC}"
 
-# Install dependencies
+# Install dependencies (including devDependencies for build)
 echo -e "${YELLOW}Installing dependencies...${NC}"
-npm ci --only=production
+npm ci
 
 # Build application
 echo -e "${YELLOW}Building application...${NC}"
@@ -104,6 +104,10 @@ npm run build
 # Run migrations
 echo -e "${YELLOW}Running database migrations...${NC}"
 npm run migrate
+
+# Remove devDependencies after build (optional, saves space)
+echo -e "${YELLOW}Removing devDependencies...${NC}"
+npm prune --production
 
 # Start with PM2
 echo -e "${YELLOW}Starting application with PM2...${NC}"

@@ -14,8 +14,8 @@ COPY . .
 # Compilar TypeScript
 RUN npm run build
 
-# Limpiar devDependencies después de compilar
-RUN npm prune --production
+# NO eliminamos devDependencies en Docker porque necesitamos ejecutar migraciones
+# Para deployment directo al VPS sin Docker, se usa setup.sh que sí hace npm prune
 
 # Exponer puerto
 EXPOSE 3000
