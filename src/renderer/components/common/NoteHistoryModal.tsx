@@ -20,7 +20,7 @@ interface NoteHistoryModalProps {
 
 export function NoteHistoryModal({ isOpen, onClose, noteName, noteId }: NoteHistoryModalProps) {
   const { t } = useTranslation();
-  const { setCurrentNote } = useAppStore();
+  const { setCurrentNote, setCurrentNoteContent } = useAppStore();
   const [history, setHistory] = useState<HistoryVersion[]>([]);
   const [loading, setLoading] = useState(true);
   const [previewContent, setPreviewContent] = useState<string | null>(null);
@@ -80,6 +80,7 @@ export function NoteHistoryModal({ isOpen, onClose, noteName, noteId }: NoteHist
       const updatedNote = await window.electron.notes.readById(noteId);
       if (updatedNote) {
         setCurrentNote(updatedNote);
+        setCurrentNoteContent(updatedNote.content);
       }
       
       onClose();
