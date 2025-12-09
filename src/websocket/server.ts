@@ -224,9 +224,17 @@ export class WebSocketSyncServer {
 
       // Broadcast to other devices of the same user
       if (applied.length > 0) {
+        // Get the actual changes that were applied to send them directly
+        const broadcastChanges = changes.filter(change =>
+          applied.some(applied =>
+            applied.entityType === change.entityType &&
+            applied.entityId === change.entityId
+          )
+        );
+        
         this.broadcastToUserDevices(userId, deviceId, {
-          type: 'sync:pull-request',
-          data: { timestamp: Date.now(), changesCount: applied.length },
+          type: 'sync:push',
+          data: { success: true, changes: broadcastChanges },
         });
       }
 
