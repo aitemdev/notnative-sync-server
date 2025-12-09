@@ -9,6 +9,7 @@ import { NotesDatabase } from '../database/notes';
 import { TagsDatabase } from '../database/tags';
 import { AttachmentsDatabase } from '../database/attachments';
 import { indexNote as indexEmbeddings, deleteEmbeddings } from '../database/embeddings';
+import { SyncLogDatabase } from '../sync/sync-db';
 import { IPC_CHANNELS } from '../../shared/types/ipc';
 import { FILE_WATCH_DEBOUNCE } from '../../shared/constants';
 
@@ -20,6 +21,7 @@ export class NotesWatcher {
   private notesDb: NotesDatabase;
   private tagsDb: TagsDatabase;
   private attachmentsDb: AttachmentsDatabase;
+  private syncLogDb: SyncLogDatabase;
   
   // Debounce tracking
   private pendingChanges: Map<string, NodeJS.Timeout> = new Map();
@@ -36,6 +38,7 @@ export class NotesWatcher {
     this.notesDb = new NotesDatabase(db);
     this.tagsDb = new TagsDatabase(db);
     this.attachmentsDb = new AttachmentsDatabase(db);
+    this.syncLogDb = new SyncLogDatabase(db);
     
     // Link attachments database to notes database for cascade deletion
     this.notesDb.setAttachmentsDatabase(this.attachmentsDb);
@@ -235,6 +238,25 @@ export class NotesWatcher {
 
     try {
       await this.indexNote(filePath);
+      
+      // Log to sync_log for synchronization
+      const note = this.notesDb.getNoteByPath(filePath);
+      if (note && note.uuid) {
+        const content = await fs.promises.readFile(filePath, 'utf-8');
+        this.syncLogDb.addChange({
+          entity_type: 'note',
+          entity_id: note.uuid,
+          operation: 'create',
+          data_json: {
+            ...note,
+            content,
+            created_at: note.createdAt.getTime(),
+            updated_at: note.updatedAt.getTime(),
+          },
+          timestamp: Date.now(),
+        });
+      }
+      
       this.notifyRenderer('add', filePath);
     } catch (error) {
       console.error(`❌ Error indexing new note: ${filePath}`, error);
@@ -249,6 +271,25 @@ export class NotesWatcher {
 
     try {
       await this.indexNote(filePath);
+      
+      // Log to sync_log for synchronization
+      const note = this.notesDb.getNoteByPath(filePath);
+      if (note && note.uuid) {
+        const content = await fs.promises.readFile(filePath, 'utf-8');
+        this.syncLogDb.addChange({
+          entity_type: 'note',
+          entity_id: note.uuid,
+          operation: 'update',
+          data_json: {
+            ...note,
+            content,
+            created_at: note.createdAt.getTime(),
+            updated_at: note.updatedAt.getTime(),
+          },
+          timestamp: Date.now(),
+        });
+      }
+      
       this.notifyRenderer('change', filePath);
     } catch (error) {
       console.error(`❌ Error re-indexing note: ${filePath}`, error);
@@ -262,11 +303,28 @@ export class NotesWatcher {
     console.log(`🗑️ Note deleted: ${filePath}`);
 
     try {
+      // Get note info before deleting for sync log
+      const note = this.notesDb.getNoteByPath(filePath);
+      
       // Remove from database
       this.notesDb.deleteNoteByPath(filePath);
       
       // Remove embeddings
       deleteEmbeddings(filePath);
+      
+      // Log to sync_log for synchronization
+      if (note && note.uuid) {
+        this.syncLogDb.addChange({
+          entity_type: 'note',
+          entity_id: note.uuid,
+          operation: 'delete',
+          data_json: {
+            uuid: note.uuid,
+            path: note.path,
+          },
+          timestamp: Date.now(),
+        });
+      }
       
       this.notifyRenderer('unlink', filePath);
     } catch (error) {

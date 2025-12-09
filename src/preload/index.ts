@@ -145,6 +145,22 @@ export interface ElectronAPI {
     cleanOrphans: () => Promise<{ success: boolean; cleaned?: number; error?: string }>;
   };
   
+  // Sync
+  sync: {
+    login: (email: string, password: string, serverUrl: string) => Promise<{ success: boolean; error?: string }>;
+    register: (email: string, password: string, serverUrl: string) => Promise<{ success: boolean; error?: string }>;
+    logout: () => Promise<{ success: boolean; error?: string }>;
+    manual: () => Promise<{ success: boolean; conflicts?: SyncConflict[]; error?: string }>;
+    status: () => Promise<{ success: boolean; status?: SyncStatus; error?: string }>;
+    getConfig: () => Promise<{ success: boolean; config?: { serverUrl?: string; userEmail?: string }; error?: string }>;
+    startPeriodicSync: () => Promise<{ success: boolean; error?: string }>;
+    stopPeriodicSync: () => Promise<{ success: boolean; error?: string }>;
+    onStatusChanged: (callback: (data: { isSyncing: boolean }) => void) => () => void;
+    onCompleted: (callback: (data: { conflicts?: SyncConflict[]; timestamp: number }) => void) => () => void;
+    onError: (callback: (data: { error: string }) => void) => () => void;
+    onAuthSuccess: (callback: () => void) => () => void;
+  };
+  
   // Note content events
   notes_events: {
     onContentUpdated: (callback: (data: { id: number; name: string; content: string }) => void) => () => void;
@@ -155,6 +171,24 @@ export interface ElectronAPI {
   app_events: {
     onBeforeQuit: (callback: () => void) => () => void;
   };
+}
+
+// Sync types
+export interface SyncConflict {
+  entity_type: string;
+  entity_id: string;
+  localTimestamp: number;
+  remoteTimestamp: number;
+  localData?: any;
+  remoteData?: any;
+}
+
+export interface SyncStatus {
+  isLoggedIn: boolean;
+  isSyncing: boolean;
+  lastSync?: number;
+  pendingChanges: number;
+  error?: string;
 }
 
 // Import types
@@ -341,6 +375,38 @@ const electronAPI: ElectronAPI = {
     search: (query: string, limit?: number) => ipcRenderer.invoke(IPC_CHANNELS['attachments:search'], query, limit),
     getStats: () => ipcRenderer.invoke(IPC_CHANNELS['attachments:get-stats']),
     cleanOrphans: () => ipcRenderer.invoke(IPC_CHANNELS['attachments:clean-orphans']),
+  },
+  
+  // Sync API
+  sync: {
+    login: (email, password, serverUrl) => ipcRenderer.invoke('sync:login', email, password, serverUrl),
+    register: (email, password, serverUrl) => ipcRenderer.invoke('sync:register', email, password, serverUrl),
+    logout: () => ipcRenderer.invoke('sync:logout'),
+    manual: () => ipcRenderer.invoke('sync:manual'),
+    status: () => ipcRenderer.invoke('sync:status'),
+    getConfig: () => ipcRenderer.invoke('sync:get-config'),
+    startPeriodicSync: () => ipcRenderer.invoke('sync:start-periodic'),
+    stopPeriodicSync: () => ipcRenderer.invoke('sync:stop-periodic'),
+    onStatusChanged: (callback) => {
+      const subscription = (_event: IpcRendererEvent, data: { isSyncing: boolean }) => callback(data);
+      ipcRenderer.on('sync:status-changed', subscription);
+      return () => ipcRenderer.removeListener('sync:status-changed', subscription);
+    },
+    onCompleted: (callback) => {
+      const subscription = (_event: IpcRendererEvent, data: { conflicts?: SyncConflict[]; timestamp: number }) => callback(data);
+      ipcRenderer.on('sync:completed', subscription);
+      return () => ipcRenderer.removeListener('sync:completed', subscription);
+    },
+    onError: (callback) => {
+      const subscription = (_event: IpcRendererEvent, data: { error: string }) => callback(data);
+      ipcRenderer.on('sync:error', subscription);
+      return () => ipcRenderer.removeListener('sync:error', subscription);
+    },
+    onAuthSuccess: (callback) => {
+      const subscription = () => callback();
+      ipcRenderer.on('sync:auth-success', subscription);
+      return () => ipcRenderer.removeListener('sync:auth-success', subscription);
+    },
   },
   
   // Note content updates (from AI tools)

@@ -249,6 +249,107 @@ const MIGRATIONS: string[] = [
     CREATE INDEX IF NOT EXISTS idx_attachments_path ON note_attachments(file_path);
     CREATE INDEX IF NOT EXISTS idx_attachments_name ON note_attachments(file_name);
   `,
+
+  // v13: Sync system (multi-device synchronization)
+  `
+    -- Add UUID column to notes for cross-device identification (without UNIQUE constraint initially)
+    ALTER TABLE notes ADD COLUMN uuid TEXT;
+    
+    -- Sync log table (tracks all changes for synchronization)
+    CREATE TABLE IF NOT EXISTS sync_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_type TEXT NOT NULL,        -- 'note', 'tag', 'folder', 'attachment', etc.
+      entity_id TEXT NOT NULL,          -- UUID of the entity
+      operation TEXT NOT NULL,          -- 'create', 'update', 'delete'
+      data_json TEXT,                   -- JSON snapshot of the change
+      timestamp INTEGER NOT NULL,
+      synced INTEGER DEFAULT 0,         -- 0 = pending, 1 = synced to server
+      user_id TEXT,                     -- User ID (from server)
+      device_id TEXT                    -- Device ID (unique per device)
+    );
+    
+    CREATE INDEX IF NOT EXISTS idx_sync_log_synced ON sync_log(synced);
+    CREATE INDEX IF NOT EXISTS idx_sync_log_timestamp ON sync_log(timestamp DESC);
+    CREATE INDEX IF NOT EXISTS idx_sync_log_entity ON sync_log(entity_type, entity_id);
+    
+    -- Sync configuration table (stores user credentials and sync settings)
+    CREATE TABLE IF NOT EXISTS sync_config (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+    
+    -- Insert default device_id if not exists
+    INSERT OR IGNORE INTO sync_config (key, value) 
+    VALUES ('device_id', lower(hex(randomblob(16))));
+    
+    -- Triggers for automatic sync logging on notes table
+    CREATE TRIGGER IF NOT EXISTS notes_insert_sync_log
+    AFTER INSERT ON notes
+    BEGIN
+      INSERT INTO sync_log (entity_type, entity_id, operation, data_json, timestamp, device_id)
+      SELECT 'note', NEW.uuid, 'create', 
+        json_object(
+          'id', NEW.id,
+          'uuid', NEW.uuid,
+          'name', NEW.name,
+          'path', NEW.path,
+          'folder', NEW.folder,
+          'order_index', NEW.order_index,
+          'icon', NEW.icon,
+          'icon_color', NEW.icon_color,
+          'created_at', NEW.created_at,
+          'updated_at', NEW.updated_at
+        ),
+        NEW.created_at,
+        (SELECT value FROM sync_config WHERE key = 'device_id')
+      WHERE NEW.uuid IS NOT NULL;
+    END;
+    
+    CREATE TRIGGER IF NOT EXISTS notes_update_sync_log
+    AFTER UPDATE ON notes
+    BEGIN
+      INSERT INTO sync_log (entity_type, entity_id, operation, data_json, timestamp, device_id)
+      SELECT 'note', NEW.uuid, 'update',
+        json_object(
+          'id', NEW.id,
+          'uuid', NEW.uuid,
+          'name', NEW.name,
+          'path', NEW.path,
+          'folder', NEW.folder,
+          'order_index', NEW.order_index,
+          'icon', NEW.icon,
+          'icon_color', NEW.icon_color,
+          'created_at', NEW.created_at,
+          'updated_at', NEW.updated_at
+        ),
+        NEW.updated_at,
+        (SELECT value FROM sync_config WHERE key = 'device_id')
+      WHERE NEW.uuid IS NOT NULL;
+    END;
+    
+    CREATE TRIGGER IF NOT EXISTS notes_delete_sync_log
+    AFTER DELETE ON notes
+    BEGIN
+      INSERT INTO sync_log (entity_type, entity_id, operation, data_json, timestamp, device_id)
+      SELECT 'note', OLD.uuid, 'delete',
+        json_object('uuid', OLD.uuid, 'path', OLD.path),
+        (strftime('%s', 'now') * 1000),
+        (SELECT value FROM sync_config WHERE key = 'device_id')
+      WHERE OLD.uuid IS NOT NULL;
+    END;
+    
+    -- Add remote sync fields to attachments
+    ALTER TABLE note_attachments ADD COLUMN remote_url TEXT;
+    ALTER TABLE note_attachments ADD COLUMN sync_status TEXT DEFAULT 'local_only';
+    ALTER TABLE note_attachments ADD COLUMN file_hash TEXT;
+    
+    CREATE INDEX IF NOT EXISTS idx_attachments_hash ON note_attachments(file_hash);
+    CREATE INDEX IF NOT EXISTS idx_attachments_sync_status ON note_attachments(sync_status);
+    
+    -- Note: UNIQUE index for uuid will be created after migration via code
+    -- This is because SQLite cannot add UNIQUE constraint to existing tables with data
+    CREATE INDEX IF NOT EXISTS idx_notes_uuid ON notes(uuid);
+  `,
 ];
 
 export function runMigrations(db: Database.Database): void {

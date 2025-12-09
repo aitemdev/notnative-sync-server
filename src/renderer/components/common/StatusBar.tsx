@@ -4,6 +4,7 @@ import { useAppStore } from '../../stores/app-store';
 import { Settings, PanelLeftClose, PanelLeft, MessageSquare, Paperclip } from 'lucide-react';
 import { EditorMode } from '../../lib/editor/types';
 import AttachmentsPopover from './AttachmentsPopover';
+import { SyncIndicator } from '../sync/SyncIndicator';
 
 interface Attachment {
   name: string;
@@ -199,6 +200,9 @@ export default function StatusBar() {
             <MessageSquare size={14} />
             <span className="text-xs hidden sm:inline">AI</span>
           </button>
+
+          {/* Sync indicator */}
+          <SyncIndicator />
 
           {/* Settings */}
           <button

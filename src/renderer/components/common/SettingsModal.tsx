@@ -1,14 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Sun, Moon, Monitor, Upload, Check, Palette, Type, Layout, Info, Brain, RefreshCw, Database, ChevronDown, Key, Globe, Folder, AlertTriangle, Paperclip, FileText } from 'lucide-react';
+import { X, Sun, Moon, Monitor, Upload, Check, Palette, Type, Layout, Info, Brain, RefreshCw, Database, ChevronDown, Key, Globe, Folder, AlertTriangle, Paperclip, FileText, Cloud } from 'lucide-react';
 import { useTheme } from './ThemeProvider';
 import { useAppStore } from '../../stores/app-store';
 import type { Theme, ThemeFile, ThemeColors } from '../../../shared/types/theme';
 import { THEME_JSON_SCHEMA } from '../../../shared/types/theme';
 import { changeLanguage, getCurrentLanguage } from '../../i18n';
 import { HelpModal } from './HelpModal';
+import { SyncSettingsTab } from '../sync/SyncSettingsTab';
 
-type SettingsTab = 'appearance' | 'ai' | 'editor' | 'language' | 'storage' | 'about';
+type SettingsTab = 'appearance' | 'ai' | 'editor' | 'language' | 'storage' | 'sync' | 'about';
 
 /**
  * Hook to manage settings modal state globally
@@ -1416,6 +1417,7 @@ export function SettingsModal() {
     { id: 'editor', label: t('settings.tabs.editor'), icon: Type },
     { id: 'language', label: t('settings.tabs.language'), icon: Globe },
     { id: 'storage', label: t('settings.tabs.storage'), icon: Folder },
+    { id: 'sync', label: 'Sincronización', icon: Cloud },
     { id: 'about', label: t('settings.tabs.about'), icon: Info },
   ];
   
@@ -1474,6 +1476,7 @@ export function SettingsModal() {
               {activeTab === 'editor' && <EditorTab />}
               {activeTab === 'language' && <LanguageTab />}
               {activeTab === 'storage' && <StorageTab />}
+              {activeTab === 'sync' && <SyncSettingsTab />}
               {activeTab === 'about' && <AboutTab />}
             </div>
           </div>

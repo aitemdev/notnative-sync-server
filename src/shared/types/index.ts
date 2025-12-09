@@ -3,6 +3,7 @@
 // ============== NOTES ==============
 export interface NoteMetadata {
   id: number;
+  uuid?: string;  // UUID for cross-device sync (v13+)
   name: string;
   path: string;
   folder: string | null;

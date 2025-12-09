@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: notnative-postgres
+    environment:
+      POSTGRES_DB: notnative_sync
+      POSTGRES_USER: notnative_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-change_this_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - notnative-network
+    restart: unless-stopped
+
+  app:
+    build: .
+    container_name: notnative-server
+    depends_on:
+      - postgres
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: notnative_sync
+      DB_USER: notnative_user
+      DB_PASSWORD: ${DB_PASSWORD:-change_this_password}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+    ports:
+      - "3000:3000"
+    networks:
+      - notnative-network
+    restart: unless-stopped
+    command: sh -c "sleep 10 && npm run migrate && node dist/index.js"
+
+volumes:
+  postgres_data:
+
+networks:
+  notnative-network:
+    driver: bridge

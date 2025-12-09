@@ -6,6 +6,7 @@ import { config } from 'dotenv';
 import { initDatabase, getDatabase, closeDatabase } from './database/connection';
 import { registerIpcHandlers } from './ipc/handlers';
 import { registerAIHandlers } from './ipc/ai-handlers';
+import { registerSyncHandlers } from './ipc/sync-handlers';
 import { createMainWindow, getMainWindow } from './windows/main-window';
 import { createQuickNoteWindow } from './windows/quicknote-window';
 import { NotesDirectory } from './files/notes-directory';
@@ -13,6 +14,8 @@ import { NotesWatcher } from './files/watcher';
 import { MCPServer } from './mcp/server';
 import { SystemTray } from './tray/system-tray';
 import { loadSettings } from './settings/store';
+import { SyncService } from './sync/sync-service';
+import { NotesDatabase } from './database/notes';
 
 // Load environment variables from .env file
 config();
@@ -75,6 +78,7 @@ let notesDir: NotesDirectory | null = null;
 let watcher: NotesWatcher | null = null;
 let mcpServer: MCPServer | null = null;
 let tray: SystemTray | null = null;
+let syncService: SyncService | null = null;
 let isQuitting = false;
 
 // Environment
@@ -160,6 +164,25 @@ async function initialize() {
   // Register IPC handlers
   registerIpcHandlers(getDatabase()!, notesDir);
   registerAIHandlers(getDatabase()!, notesDir, getMainWindow);
+  
+  // Initialize sync service
+  const notesDb = new NotesDatabase(getDatabase()!);
+  syncService = new SyncService(getDatabase()!, notesDb);
+  registerSyncHandlers(syncService, mainWindow);
+  
+  // Migrate existing notes to have UUIDs
+  const migratedCount = notesDb.migrateNotesToUUIDs();
+  if (migratedCount > 0) {
+    console.log(`✅ Migrated ${migratedCount} notes to have UUIDs`);
+  }
+
+  // Create UNIQUE index on uuid after migration (SQLite limitation workaround)
+  try {
+    getDatabase()!.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_uuid_unique ON notes(uuid) WHERE uuid IS NOT NULL');
+    console.log('✅ Created UNIQUE index on notes.uuid');
+  } catch (error) {
+    console.warn('⚠️ Could not create UNIQUE index on uuid (may already exist):', error);
+  }
 
   // Start file watcher (includes initial sync)
   watcher = new NotesWatcher(getDatabase()!, notesDir, mainWindow);
@@ -192,6 +215,7 @@ function cleanup() {
   console.log('🧹 Cleaning up...');
   watcher?.stop();
   mcpServer?.stop();
+  syncService?.dispose();
   closeDatabase();
   if (app.isReady()) {
     globalShortcut.unregisterAll();

@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import { dateToSqliteTimestamp, sqliteTimestampToDate } from './connection';
 import type { NoteMetadata, Note, NoteSearchResult } from '../../shared/types';
 import type { AttachmentsDatabase } from './attachments';
@@ -27,16 +28,18 @@ export class NotesDatabase {
   
   createNote(name: string, path: string, folder: string | null = null): NoteMetadata {
     const now = dateToSqliteTimestamp(new Date());
+    const uuid = randomUUID();
     
     const stmt = this.db.prepare(`
-      INSERT INTO notes (name, path, folder, order_index, created_at, updated_at)
-      VALUES (?, ?, ?, 0, ?, ?)
+      INSERT INTO notes (name, path, folder, uuid, order_index, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 0, ?, ?)
     `);
     
-    const result = stmt.run(name, path, folder, now, now);
+    const result = stmt.run(name, path, folder, uuid, now, now);
     
     return {
       id: result.lastInsertRowid as number,
+      uuid,
       name,
       path,
       folder,
@@ -331,6 +334,7 @@ export class NotesDatabase {
   private rowToMetadata(row: NoteRow): NoteMetadata {
     return {
       id: row.id,
+      uuid: row.uuid,
       name: row.name,
       path: row.path,
       folder: row.folder,
@@ -341,11 +345,49 @@ export class NotesDatabase {
       updatedAt: sqliteTimestampToDate(row.updated_at),
     };
   }
+  
+  // ============== SYNC UTILITIES ==============
+  
+  /**
+   * Migrate existing notes to have UUIDs
+   * Run this once after upgrading to v13
+   */
+  migrateNotesToUUIDs(): number {
+    const notesWithoutUuid = this.db.prepare(`
+      SELECT id FROM notes WHERE uuid IS NULL
+    `).all() as { id: number }[];
+    
+    const updateStmt = this.db.prepare(`
+      UPDATE notes SET uuid = ? WHERE id = ?
+    `);
+    
+    let migratedCount = 0;
+    
+    for (const note of notesWithoutUuid) {
+      const uuid = randomUUID();
+      updateStmt.run(uuid, note.id);
+      migratedCount++;
+    }
+    
+    return migratedCount;
+  }
+  
+  /**
+   * Get note by UUID (for sync operations)
+   */
+  getNoteByUUID(uuid: string): NoteMetadata | null {
+    const row = this.db.prepare(`
+      SELECT * FROM notes WHERE uuid = ?
+    `).get(uuid) as NoteRow | undefined;
+    
+    return row ? this.rowToMetadata(row) : null;
+  }
 }
 
 // Raw database row type
 interface NoteRow {
   id: number;
+  uuid: string | null;
   name: string;
   path: string;
   folder: string | null;

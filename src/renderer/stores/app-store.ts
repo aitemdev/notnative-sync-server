@@ -37,6 +37,9 @@ interface AppState {
   // Settings modal
   isSettingsOpen: boolean;
   
+  // Sync login screen
+  showLoginScreen: boolean;
+  
   // Search
   searchQuery: string;
   searchResults: NoteMetadata[];
@@ -83,6 +86,9 @@ interface AppState {
   setIsSettingsOpen: (open: boolean) => void;
   toggleSettings: () => void;
   
+  // Sync login screen
+  setShowLoginScreen: (show: boolean) => void;
+  
   setSearchQuery: (query: string) => void;
   setSearchResults: (results: NoteMetadata[]) => void;
   
@@ -126,6 +132,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   
   // Settings modal
   isSettingsOpen: false,
+  
+  // Sync login screen
+  showLoginScreen: false,
   
   searchQuery: '',
   searchResults: [],
@@ -198,6 +207,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Settings modal
   setIsSettingsOpen: (open) => set({ isSettingsOpen: open }),
   toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen })),
+  
+  // Sync login screen
+  setShowLoginScreen: (show) => set({ showLoginScreen: show }),
   
   setSearchQuery: (query) => set({ searchQuery: query }),
   setSearchResults: (results) => set({ searchResults: results }),
