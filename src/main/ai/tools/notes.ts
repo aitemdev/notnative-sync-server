@@ -330,5 +330,148 @@ export function createNoteTools(ctx: ToolContext) {
         }
       },
     }),
+
+    // === History ===
+    get_note_history: tool({
+      description: 'Get the version history of a note. Returns a list of all previous versions with timestamps.',
+      inputSchema: z.object({
+        name: z.string().describe('The name of the note (without .md extension). Use "folder/name" format for notes in folders (e.g., "Proyectos/Tareas")'),
+      }),
+      execute: async ({ name }: { name: string }) => {
+        // Extract just the note name if it includes a folder path
+        const noteName = name.includes('/') ? path.basename(name) : name;
+        
+        const metadata = ctx.notesDb.getNoteByName(noteName);
+        if (!metadata) {
+          return `Note '${name}' not found. Use list_notes or search_notes to find available notes.`;
+        }
+
+        try {
+          const { getNoteBackups } = await import('../../files/note-file');
+          const backups = getNoteBackups(noteName, ctx.notesDir);
+          
+          if (backups.length === 0) {
+            return `No history found for note '${name}'. The note hasn't been modified yet.`;
+          }
+
+          const history = backups.map((backupPath, index) => {
+            const basename = path.basename(backupPath);
+            const match = basename.match(/_(\d+)\.md$/);
+            const timestamp = match ? parseInt(match[1]) : 0;
+            const date = new Date(timestamp);
+            
+            return `${index + 1}. ${date.toLocaleString()} - ${basename}`;
+          }).join('\n');
+
+          return `📜 History for '${name}' (${backups.length} versions):\n\n${history}\n\nUse read_note_history_version to view the content of a specific version.`;
+        } catch (error) {
+          return `Error retrieving history: ${error}`;
+        }
+      },
+    }),
+
+    read_note_history_version: tool({
+      description: 'Read the content of a specific version from the note history. Use get_note_history first to see available versions.',
+      inputSchema: z.object({
+        name: z.string().describe('The name of the note (without .md extension). Use "folder/name" format for notes in folders (e.g., "Proyectos/Tareas")'),
+        versionIndex: z.number().describe('The version index (starting from 1, where 1 is the most recent)'),
+      }),
+      execute: async ({ name, versionIndex }: { name: string; versionIndex: number }) => {
+        // Extract just the note name if it includes a folder path
+        const noteName = name.includes('/') ? path.basename(name) : name;
+        
+        const metadata = ctx.notesDb.getNoteByName(noteName);
+        if (!metadata) {
+          return `Note '${name}' not found. Use list_notes or search_notes to find available notes.`;
+        }
+
+        try {
+          const { getNoteBackups } = await import('../../files/note-file');
+          const backups = getNoteBackups(noteName, ctx.notesDir);
+          
+          if (backups.length === 0) {
+            return `No history found for note '${name}'.`;
+          }
+
+          if (versionIndex < 1 || versionIndex > backups.length) {
+            return `Invalid version index. Available versions: 1-${backups.length}`;
+          }
+
+          const backupPath = backups[versionIndex - 1];
+          const content = fs.readFileSync(backupPath, 'utf-8');
+          const basename = path.basename(backupPath);
+          const match = basename.match(/_(\d+)\.md$/);
+          const timestamp = match ? parseInt(match[1]) : 0;
+          const date = new Date(timestamp);
+
+          return `# ${name} (Version from ${date.toLocaleString()})\n\n${content}\n\n---\n**📚 Historical version of:** [[${noteName}]]`;
+        } catch (error) {
+          return `Error reading history version: ${error}`;
+        }
+      },
+    }),
+
+    restore_note_from_history: tool({
+      description: 'Restore a note to a previous version from its history. This will create a backup of the current version before restoring.',
+      inputSchema: z.object({
+        name: z.string().describe('The name of the note (without .md extension). Use "folder/name" format for notes in folders (e.g., "Proyectos/Tareas")'),
+        versionIndex: z.number().describe('The version index to restore (starting from 1, where 1 is the most recent)'),
+      }),
+      execute: async ({ name, versionIndex }: { name: string; versionIndex: number }) => {
+        // Extract just the note name if it includes a folder path
+        const noteName = name.includes('/') ? path.basename(name) : name;
+        
+        const metadata = ctx.notesDb.getNoteByName(noteName);
+        if (!metadata) {
+          return `Note '${name}' not found. Use list_notes or search_notes to find available notes.`;
+        }
+
+        try {
+          const { getNoteBackups } = await import('../../files/note-file');
+          const backups = getNoteBackups(noteName, ctx.notesDir);
+          
+          if (backups.length === 0) {
+            return `No history found for note '${name}'.`;
+          }
+
+          if (versionIndex < 1 || versionIndex > backups.length) {
+            return `Invalid version index. Available versions: 1-${backups.length}`;
+          }
+
+          const backupPath = backups[versionIndex - 1];
+          const noteFile = NoteFile.open(metadata.path);
+          
+          // Create backup of current version before restoring
+          noteFile.createBackup(ctx.notesDir);
+          
+          // Read history content and write to note
+          const historyContent = fs.readFileSync(backupPath, 'utf-8');
+          noteFile.write(historyContent);
+          
+          // Update database
+          ctx.notesDb.touchNote(metadata.id);
+          ctx.notesDb.indexNoteContent(metadata.id, noteName, historyContent);
+          
+          // Notify renderer about the update
+          const mainWindow = ctx.getMainWindow();
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send(IPC_CHANNELS['note:content-updated'], {
+              id: metadata.id,
+              name: noteName,
+              content: historyContent,
+            });
+          }
+          
+          const basename = path.basename(backupPath);
+          const match = basename.match(/_(\d+)\.md$/);
+          const timestamp = match ? parseInt(match[1]) : 0;
+          const date = new Date(timestamp);
+          
+          return `✅ Note '${name}' restored to version from ${date.toLocaleString()}. A backup of the previous current version has been created.`;
+        } catch (error) {
+          return `Error restoring from history: ${error}`;
+        }
+      },
+    }),
   };
 }

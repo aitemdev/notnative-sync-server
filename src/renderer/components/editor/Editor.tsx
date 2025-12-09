@@ -3,10 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../../stores/app-store';
 import { useNotes } from '../../hooks/useNotes';
 import { EDITOR_AUTOSAVE_DELAY } from '../../../shared/constants';
-import { FileText, Code, Eye, Columns2 } from 'lucide-react';
+import { FileText, Code, Eye, Columns2, Clock } from 'lucide-react';
 import VimEditor from './VimEditor';
 import MarkdownPreview from './MarkdownPreview';
 import { EditorMode } from '../../lib/editor/types';
+import { NoteHistoryModal } from '../common/NoteHistoryModal';
 
 export default function Editor() {
   const { t } = useTranslation();
@@ -32,6 +33,7 @@ export default function Editor() {
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
   
   // Rename state for header
   const [isRenaming, setIsRenaming] = useState(false);
@@ -116,8 +118,16 @@ export default function Editor() {
       return;
       
       // SAFETY CHECK: Only save if we have a valid note ID (not null/undefined/0)
-      if (!noteIdToSave || noteIdToSave <= 0) {
+      if (!noteIdToSave) {
         console.log('💾 Skipping save - no valid note ID:', noteIdToSave);
+        return;
+      }
+      
+      // After null check, use non-null assertion for subsequent checks
+      const validNoteId = noteIdToSave!;
+      
+      if (validNoteId <= 0) {
+        console.log('💾 Skipping save - invalid note ID value:', validNoteId);
         return;
       }
       
@@ -127,7 +137,7 @@ export default function Editor() {
       const contentToSave = currentNoteContentRef.current;
       
       console.log('💾 Cleanup check:', { 
-        noteIdToSave, 
+        noteIdToSave: validNoteId, 
         noteNameToSave, 
         wasModified, 
         contentLength: contentToSave?.length,
@@ -140,9 +150,10 @@ export default function Editor() {
         return;
       }
       
+      // At this point validNoteId is a positive number
       if (wasModified) {
-        console.log('💾 Saving pending changes before switching note:', noteNameToSave, 'id:', noteIdToSave, 'content length:', contentToSave.length);
-        saveNoteSync(noteIdToSave, contentToSave);
+        console.log('💾 Saving pending changes before switching note:', noteNameToSave, 'id:', validNoteId, 'content length:', contentToSave.length);
+        saveNoteSync(validNoteId, contentToSave);
       } else {
         console.log('💾 Skipping save - not modified');
       }
@@ -438,6 +449,15 @@ export default function Editor() {
           )}
         </div>
         <div className="flex items-center gap-3 text-xs text-subtext0">
+          {/* History button */}
+          <button
+            onClick={() => setHistoryModalOpen(true)}
+            className="p-1.5 rounded hover:bg-surface0 transition-colors flex-shrink-0"
+            title={t('history.title') || 'Ver historial de versiones'}
+          >
+            <Clock size={14} />
+          </button>
+          
           {/* View mode toggle buttons */}
           <div className="flex items-center border border-surface1 rounded overflow-hidden flex-shrink-0">
             <button
@@ -508,6 +528,14 @@ export default function Editor() {
           </div>
         )}
       </div>
+
+      {/* History Modal */}
+      <NoteHistoryModal 
+        isOpen={historyModalOpen}
+        onClose={() => setHistoryModalOpen(false)}
+        noteName={currentNote.name}
+        noteId={currentNote.id}
+      />
     </div>
   );
 }

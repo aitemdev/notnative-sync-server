@@ -23,6 +23,9 @@ export interface ElectronAPI {
     move: (name: string, folder: string) => Promise<void>;
     search: (query: string) => Promise<NoteSearchResult[]>;
     reindex: () => Promise<{ indexed: number; total: number }>;
+    getHistory: (noteName: string) => Promise<Array<{ path: string; filename: string; timestamp: number; date: Date }>>;
+    getHistoryContent: (historyPath: string) => Promise<string>;
+    restoreFromHistory: (noteName: string, historyPath: string) => Promise<{ success: boolean }>;
   };
 
   // Links
@@ -34,7 +37,7 @@ export interface ElectronAPI {
   
   // Folders
   folders: {
-    list: () => Promise<FolderMetadata[]>;
+    list: () => Promise<string[]>;
     create: (path: string) => Promise<FolderMetadata>;
     delete: (path: string) => Promise<void>;
     rename: (oldPath: string, newPath: string) => Promise<void>;
@@ -199,6 +202,9 @@ const electronAPI: ElectronAPI = {
     move: (name, folder) => ipcRenderer.invoke(IPC_CHANNELS['notes:move'], name, folder),
     search: (query) => ipcRenderer.invoke(IPC_CHANNELS['notes:search'], query),
     reindex: () => ipcRenderer.invoke(IPC_CHANNELS['notes:reindex']),
+    getHistory: (noteName) => ipcRenderer.invoke(IPC_CHANNELS['notes:get-history'], noteName),
+    getHistoryContent: (historyPath) => ipcRenderer.invoke(IPC_CHANNELS['notes:get-history-content'], historyPath),
+    restoreFromHistory: (noteName, historyPath) => ipcRenderer.invoke(IPC_CHANNELS['notes:restore-from-history'], noteName, historyPath),
   },
 
   // Links API

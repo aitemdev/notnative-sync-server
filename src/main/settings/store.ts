@@ -13,6 +13,7 @@ export interface AppSettings {
   embeddingModel?: string;
   braveApiKey?: string;
   notesRoot?: string;
+  zoomLevel?: number;
 }
 
 const SETTINGS_FILE = 'settings.json';

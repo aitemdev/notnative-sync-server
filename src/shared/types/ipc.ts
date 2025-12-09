@@ -14,6 +14,9 @@ export const IPC_CHANNELS = {
   'notes:search': 'notes:search',
   'notes:reindex': 'notes:reindex',
   'notes:get-metadata': 'notes:get-metadata',
+  'notes:get-history': 'notes:get-history',
+  'notes:get-history-content': 'notes:get-history-content',
+  'notes:restore-from-history': 'notes:restore-from-history',
 
   // ============== LINKS ==============
   'links:get-outgoing': 'links:get-outgoing',
@@ -116,6 +119,8 @@ export const IPC_CHANNELS = {
   'window:minimize': 'window:minimize',
   'window:maximize': 'window:maximize',
   'window:close': 'window:close',
+  'window:get-zoom-level': 'window:get-zoom-level',
+  'window:set-zoom-level': 'window:set-zoom-level',
 
   // ============== TRAY ==============
   'tray:action': 'tray:action',

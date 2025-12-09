@@ -39,5 +39,18 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist/renderer',
+    minify: 'esbuild',
+    sourcemap: false,
+    // Deshabilitar caché para forzar compilación limpia
+    rollupOptions: {
+      onwarn(warning, warn) {
+        // Ignorar advertencias de módulos dinámicos para evitar ruido
+        if (warning.code === 'MODULE_LEVEL_DIRECTIVE') return;
+        warn(warning);
+      },
+    },
   },
+  // Forzar reconstrucción limpia
+  clearScreen: false,
+  logLevel: 'info',
 });

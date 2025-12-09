@@ -1,6 +1,6 @@
 {
   "name": "notnative-electron",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "NotNative - Personal Knowledge Management with AI",
   "homepage": "https://github.com/your-username/notnative",
   "author": {
@@ -11,7 +11,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/build-preload.mjs && vite",
-    "build": "node scripts/build-preload.mjs && tsc && vite build && electron-builder",
+    "build": "rm -rf dist release && rm -rf ~/.cache/electron-builder && node scripts/build-preload.mjs && tsc && vite build --mode production && electron-builder --publish=never",
     "build:preload": "node scripts/build-preload.mjs",
     "preview": "vite preview",
     "lint": "eslint . --ext .ts,.tsx",
@@ -98,9 +98,17 @@
     "files": [
       "dist/**/*",
       "node_modules/**/*",
-      "package.json"
+      "package.json",
+      "resources/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "resources"
+      }
     ],
     "linux": {
+      "icon": "resources/icons/icon.png",
       "target": [
         "AppImage",
         "deb"
@@ -118,7 +126,9 @@
       "target": [
         "nsis",
         "portable"
-      ]
+      ],
+      "sign": null,
+      "signtoolOptions": null
     }
   }
 }

@@ -17,6 +17,31 @@ import { loadSettings } from './settings/store';
 // Load environment variables from .env file
 config();
 
+// ============== SINGLE INSTANCE LOCK ==============
+// Handle this FIRST before any other initialization to exit quickly if second instance
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  // Another instance is already running, quit immediately
+  app.quit();
+  process.exit(0);
+}
+
+// Handle second instance - show the existing window
+app.on('second-instance', () => {
+  const mainWindow = getMainWindow();
+  if (mainWindow) {
+    // Show window if it's hidden or minimized
+    if (!mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.focus();
+  }
+});
+
 // Disable GPU acceleration to avoid GPU process errors on some systems
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('disable-gpu');
@@ -50,6 +75,7 @@ let notesDir: NotesDirectory | null = null;
 let watcher: NotesWatcher | null = null;
 let mcpServer: MCPServer | null = null;
 let tray: SystemTray | null = null;
+let isQuitting = false;
 
 // Environment
 const isDev = process.env.NODE_ENV === 'development';
@@ -146,8 +172,14 @@ async function initialize() {
   // Create system tray
   tray = new SystemTray(mainWindow);
 
-  // Always open DevTools for debugging
-  mainWindow.webContents.openDevTools();
+  // Ensure window is shown after everything is initialized
+  mainWindow.show();
+  mainWindow.focus();
+
+  // Open DevTools only in development mode
+  if (isDev) {
+    mainWindow.webContents.openDevTools();
+  }
 
   // Register global shortcuts
   globalShortcut.register('CommandOrControl+Q', () => {
@@ -169,24 +201,31 @@ function cleanup() {
 // Handle app ready
 app.whenReady().then(initialize);
 
-// Handle all windows closed
+// Handle all windows closed - don't quit, keep running in tray
 app.on('window-all-closed', () => {
-  // On macOS, keep the app running even with no windows
-  if (!isMac) {
-    app.quit();
+  // On Linux and Windows, keep the app running in the tray
+  // Only quit on macOS if explicitly requested
+  if (isMac) {
+    // On macOS, do nothing - app keeps running
   }
+  // On other platforms, don't quit - stay in tray
 });
 
 // Handle activate (macOS)
 app.on('activate', async () => {
-  // Re-create window on macOS when dock icon is clicked
-  if (BrowserWindow.getAllWindows().length === 0) {
+  // Re-create or show window on macOS when dock icon is clicked
+  const mainWindow = getMainWindow();
+  if (mainWindow) {
+    mainWindow.show();
+    mainWindow.focus();
+  } else if (BrowserWindow.getAllWindows().length === 0) {
     await createMainWindow();
   }
 });
 
 // Handle before quit - notify renderer to save
 app.on('before-quit', async (event) => {
+  isQuitting = true;
   const mainWindow = getMainWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
     // Send signal to renderer to save
@@ -222,23 +261,6 @@ process.on('SIGTERM', () => {
   app.quit();
 });
 
-// Handle second instance (single instance lock)
-const gotTheLock = app.requestSingleInstanceLock();
-
-if (!gotTheLock) {
-  app.quit();
-} else {
-  app.on('second-instance', () => {
-    const mainWindow = getMainWindow();
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) {
-        mainWindow.restore();
-      }
-      mainWindow.focus();
-    }
-  });
-}
-
 // Security: Prevent navigation to external URLs
 app.on('web-contents-created', (_, contents) => {
   contents.on('will-navigate', (event, navigationUrl) => {
@@ -269,3 +291,6 @@ if (isDev) {
 
 // Export for use in other modules
 export { notesDir, getMainWindow };
+export function getIsQuitting(): boolean {
+  return isQuitting;
+}

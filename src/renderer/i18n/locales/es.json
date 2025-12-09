@@ -101,7 +101,10 @@
       "currentThemeColors": "Colores del tema actual",
       "deleteTheme": "Eliminar tema",
       "system": "Sistema",
-      "followSystem": "Sigue el tema del sistema"
+      "followSystem": "Sigue el tema del sistema",
+      "zoom": "Zoom de interfaz",
+      "resetZoom": "Restablecer",
+      "zoomDesc": "Ajusta el tamaño de la interfaz para mejor legibilidad"
     },
     "editor": {
       "typography": "Tipografía",
@@ -157,6 +160,7 @@
       "change": "Cambiar",
       "pickError": "No se pudo seleccionar la carpeta",
       "saveError": "No se pudo guardar la carpeta",
+      "saveSuccess": "Carpeta guardada correctamente",
       "loadError": "No se pudieron cargar los ajustes",
       "restartHint": "Reinicia para reindexar la nueva carpeta si cambias la ruta."
     },
@@ -187,5 +191,18 @@
     "preview": "Vista previa",
     "openExternal": "Abrir con app externa",
     "delete": "Eliminar"
+  },
+  "history": {
+    "title": "Historial de versiones",
+    "version": "Versión",
+    "noVersions": "No hay versiones anteriores",
+    "preview": "Vista previa",
+    "restore": "Restaurar",
+    "restoring": "Restaurando...",
+    "confirmRestore": "¿Estás seguro de que quieres restaurar esta versión? Se creará una copia de seguridad de la versión actual.",
+    "restoreSuccess": "Versión restaurada correctamente",
+    "restoreError": "Error al restaurar la versión",
+    "selectVersion": "Selecciona una versión para ver su contenido",
+    "warning": "Al restaurar una versión, se creará una copia de seguridad de la versión actual. Puedes volver a cambiarla desde este mismo historial."
   }
 }

@@ -8,7 +8,7 @@ import AttachmentsPopover from './AttachmentsPopover';
 interface Attachment {
   name: string;
   path: string;
-  size: number;
+  size?: number;
   type: string;
 }
 

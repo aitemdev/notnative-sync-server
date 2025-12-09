@@ -1,7 +1,7 @@
 // Application constants
 
 export const APP_NAME = 'NotNative';
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.0.1';
 
 // Default paths
 export const DEFAULT_NOTES_FOLDER = 'NotNative Notes';

@@ -76,9 +76,9 @@ export class SystemTray {
 
     this.tray.setContextMenu(contextMenu);
 
-    // Click on tray icon
+    // Click on tray icon - always show window
     this.tray.on('click', () => {
-      this.toggleMainWindow();
+      this.showMainWindow();
     });
 
     // Double-click on tray icon

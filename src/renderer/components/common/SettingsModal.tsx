@@ -244,6 +244,104 @@ function ImportThemeButton({ onImport }: { onImport: (theme: Theme) => void }) {
 }
 
 /**
+ * Zoom control component
+ */
+function ZoomControl() {
+  const { t } = useTranslation();
+  const [zoomLevel, setZoomLevel] = useState(100);
+
+  useEffect(() => {
+    // Get current zoom level when component mounts
+    const getZoom = async () => {
+      try {
+        const zoom = await window.electron.invoke('window:get-zoom-level') as number;
+        setZoomLevel(Math.round(zoom * 100));
+      } catch (error) {
+        console.error('Error getting zoom level:', error);
+      }
+    };
+    getZoom();
+  }, []);
+
+  const handleZoomChange = async (value: number) => {
+    setZoomLevel(value);
+    try {
+      await window.electron.invoke('window:set-zoom-level', value / 100);
+    } catch (error) {
+      console.error('Error setting zoom level:', error);
+    }
+  };
+
+  const resetZoom = () => {
+    handleZoomChange(100);
+  };
+
+  return (
+    <div className="pt-4 border-t border-surface0">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-medium flex items-center gap-2">
+          <Type size={16} />
+          {t('settings.appearance.zoom') || 'Zoom'}
+        </h3>
+        <button
+          onClick={resetZoom}
+          className="text-xs text-lavender hover:text-mauve transition-colors"
+        >
+          {t('settings.appearance.resetZoom') || 'Reset'}
+        </button>
+      </div>
+      
+      <div className="space-y-3">
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-subtext0 min-w-[3rem]">{zoomLevel}%</span>
+          <input
+            type="range"
+            min="50"
+            max="200"
+            step="10"
+            value={zoomLevel}
+            onChange={(e) => handleZoomChange(parseInt(e.target.value))}
+            className="flex-1 h-2 bg-surface0 rounded-lg appearance-none cursor-pointer
+                     [&::-webkit-slider-thumb]:appearance-none
+                     [&::-webkit-slider-thumb]:w-4
+                     [&::-webkit-slider-thumb]:h-4
+                     [&::-webkit-slider-thumb]:rounded-full
+                     [&::-webkit-slider-thumb]:bg-lavender
+                     [&::-webkit-slider-thumb]:cursor-pointer
+                     [&::-moz-range-thumb]:w-4
+                     [&::-moz-range-thumb]:h-4
+                     [&::-moz-range-thumb]:rounded-full
+                     [&::-moz-range-thumb]:bg-lavender
+                     [&::-moz-range-thumb]:border-0
+                     [&::-moz-range-thumb]:cursor-pointer"
+          />
+        </div>
+        
+        <div className="flex gap-2">
+          {[75, 100, 125, 150].map((preset) => (
+            <button
+              key={preset}
+              onClick={() => handleZoomChange(preset)}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                zoomLevel === preset
+                  ? 'bg-lavender text-base'
+                  : 'bg-surface0 text-text hover:bg-surface1'
+              }`}
+            >
+              {preset}%
+            </button>
+          ))}
+        </div>
+        
+        <p className="text-xs text-subtext0">
+          {t('settings.appearance.zoomDesc') || 'Ajusta el tamaño de la interfaz para mejor legibilidad'}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Appearance settings tab
  */
 function AppearanceTab() {
@@ -337,6 +435,9 @@ function AppearanceTab() {
           ))}
         </div>
       </div>
+      
+      {/* Zoom control */}
+      <ZoomControl />
     </div>
   );
 }
@@ -436,6 +537,7 @@ function StorageTab() {
   const [pendingPath, setPendingPath] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -469,10 +571,13 @@ function StorageTab() {
 
   const handleSave = async () => {
     setError(null);
+    setSuccess(false);
     setSaving(true);
     try {
       await window.electron.app.setSettings({ notesRoot: pendingPath || undefined });
       setCurrentPath(pendingPath);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
       console.error('Failed to save settings', err);
       setError(t('settings.storage.saveError', 'No se pudo guardar la carpeta'));
@@ -483,6 +588,12 @@ function StorageTab() {
 
   return (
     <div className="space-y-4">
+      {/* Título con ícono */}
+      <div className="flex items-center gap-2 pb-2">
+        <Database size={20} className="text-lavender" />
+        <h2 className="text-base font-semibold">{t('settings.tabs.storage', 'Almacenamiento')}</h2>
+      </div>
+      
       <div className="flex items-start gap-2 p-3 rounded-lg border border-surface0 bg-surface0/50">
         <AlertTriangle size={16} className="text-yellow mt-0.5" />
         <p className="text-sm text-subtext0">
@@ -546,6 +657,7 @@ function StorageTab() {
       </div>
 
       {error && <p className="text-xs text-red">{error}</p>}
+      {success && <p className="text-xs text-green">✅ {t('settings.storage.saveSuccess', 'Carpeta guardada correctamente')}</p>}
     </div>
   );
 }
@@ -922,6 +1034,21 @@ function AITab() {
         <p className="text-sm text-subtext0 mb-3">
           {t('settings.ai.braveKeyDesc')}
         </p>
+        
+        {/* Alerta si no hay API key configurada */}
+        {!braveKeyInfo.hasKey && (
+          <div className="bg-yellow/10 border border-yellow/30 rounded-lg p-3 mb-3 flex items-start gap-2">
+            <AlertTriangle size={16} className="text-yellow flex-shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <p className="text-yellow font-medium">
+                {t('settings.ai.braveKeyNotConfigured') || 'API de Brave Search no configurada'}
+              </p>
+              <p className="text-subtext0 text-xs mt-1">
+                {t('settings.ai.braveKeyWarning') || 'Sin esta API, las búsquedas web en el chat no funcionarán. Obtén tu clave gratuita en api.search.brave.com'}
+              </p>
+            </div>
+          </div>
+        )}
 
         {braveKeyInfo.hasKey && !showBraveKeyInput ? (
           <div className="flex items-center gap-3">
@@ -1180,7 +1307,7 @@ function AboutTab() {
         </div>
         <div>
           <h2 className="text-lg font-bold">NotNative</h2>
-          <p className="text-sm text-subtext0">v1.0.0</p>
+          <p className="text-sm text-subtext0">v1.0.1</p>
         </div>
       </div>
       
@@ -1288,7 +1415,7 @@ export function SettingsModal() {
     { id: 'ai', label: t('settings.tabs.ai'), icon: Brain },
     { id: 'editor', label: t('settings.tabs.editor'), icon: Type },
     { id: 'language', label: t('settings.tabs.language'), icon: Globe },
-      { id: 'storage', label: t('settings.tabs.storage'), icon: Folder },
+    { id: 'storage', label: t('settings.tabs.storage'), icon: Folder },
     { id: 'about', label: t('settings.tabs.about'), icon: Info },
   ];
   
@@ -1346,7 +1473,7 @@ export function SettingsModal() {
               {activeTab === 'ai' && <AITab />}
               {activeTab === 'editor' && <EditorTab />}
               {activeTab === 'language' && <LanguageTab />}
-                {activeTab === 'storage' && <StorageTab />}
+              {activeTab === 'storage' && <StorageTab />}
               {activeTab === 'about' && <AboutTab />}
             </div>
           </div>

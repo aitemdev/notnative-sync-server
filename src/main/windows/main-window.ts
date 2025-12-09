@@ -1,7 +1,9 @@
-import { BrowserWindow, screen, shell } from 'electron';
+import { BrowserWindow, screen, shell, app } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import http from 'http';
+import { getSettings } from '../settings/store';
+import { getIsQuitting } from '../index';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -57,6 +59,10 @@ export async function createMainWindow(): Promise<BrowserWindow> {
   const windowWidth = Math.floor(screenWidth * 0.8);
   const windowHeight = Math.floor(screenHeight * 0.8);
 
+  // Load saved zoom level
+  const settings = getSettings();
+  const savedZoom = settings.zoomLevel || 1.0;
+
   mainWindow = new BrowserWindow({
     width: windowWidth,
     height: windowHeight,
@@ -75,7 +81,7 @@ export async function createMainWindow(): Promise<BrowserWindow> {
       sandbox: false, // Required for better-sqlite3
       webSecurity: true,
       spellcheck: true,
-      zoomFactor: 1.0, // Reset zoom to default
+      zoomFactor: savedZoom, // Apply saved zoom level
     },
   });
 
@@ -96,7 +102,14 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     await mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
 
-  // Handle window close
+  // Handle window close - hide instead of quit
+  mainWindow.on('close', (event) => {
+    if (!getIsQuitting()) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });

@@ -101,7 +101,10 @@
       "currentThemeColors": "Current theme colors",
       "deleteTheme": "Delete theme",
       "system": "System",
-      "followSystem": "Follow system theme"
+      "followSystem": "Follow system theme",
+      "zoom": "Interface Zoom",
+      "resetZoom": "Reset",
+      "zoomDesc": "Adjust the interface size for better readability"
     },
     "editor": {
       "typography": "Typography",
@@ -150,13 +153,14 @@
       "english": "English"
     },
     "storage": {
-      "title": "Notes folder",
-      "desc": "By default, a secure internal folder is used. You can choose another if needed.",
+      "title": "Notes Folder",
+      "desc": "A secure internal folder is used by default. You can choose another if needed.",
       "warning": "Network or cloud folders may be slow or unstable; use at your own risk.",
       "defaultPath": "Default path",
       "change": "Change",
       "pickError": "Could not select folder",
       "saveError": "Could not save folder",
+      "saveSuccess": "Folder saved successfully",
       "loadError": "Could not load settings",
       "restartHint": "Restart to reindex the new folder if you change the path."
     },
@@ -187,5 +191,18 @@
     "preview": "Preview",
     "openExternal": "Open with external app",
     "delete": "Delete"
+  },
+  "history": {
+    "title": "Version History",
+    "version": "Version",
+    "noVersions": "No previous versions",
+    "preview": "Preview",
+    "restore": "Restore",
+    "restoring": "Restoring...",
+    "confirmRestore": "Are you sure you want to restore this version? A backup of the current version will be created.",
+    "restoreSuccess": "Version restored successfully",
+    "restoreError": "Error restoring version",
+    "selectVersion": "Select a version to view its content",
+    "warning": "When restoring a version, a backup of the current version will be created. You can change it again from this history."
   }
 }

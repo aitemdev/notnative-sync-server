@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { IPC_CHANNELS } from '../../shared/types/ipc';
 import { NotesDirectory } from '../files/notes-directory';
-import { NoteFile } from '../files/note-file';
+import { NoteFile, getNoteBackups } from '../files/note-file';
 import { NotesDatabase } from '../database/notes';
 import { TagsDatabase } from '../database/tags';
 import { AttachmentsDatabase } from '../database/attachments';
@@ -171,7 +171,7 @@ export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirect
     const assetsDir = noteFile.ensureAssetsDirectory();
     const targetPath = path.join(assetsDir, unique);
 
-    const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    const buffer = Buffer.isBuffer(data) ? data : Buffer.from(new Uint8Array(data));
     fs.writeFileSync(targetPath, buffer);
 
     // Return relative path from the note file location to the file
@@ -230,6 +230,51 @@ export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirect
     const results = notesDb.searchNotes(query);
     console.log(`🔍 Found ${results.length} results`);
     return results;
+  });
+
+  // Get history for a note
+  ipcMain.handle(IPC_CHANNELS['notes:get-history'], async (_, noteName: string) => {
+    const backups = getNoteBackups(noteName, notesDir);
+    return backups.map(backupPath => {
+      const basename = path.basename(backupPath);
+      const match = basename.match(/_(\d+)\.md$/);
+      const timestamp = match ? parseInt(match[1]) : 0;
+      
+      return {
+        path: backupPath,
+        filename: basename,
+        timestamp,
+        date: new Date(timestamp),
+      };
+    });
+  });
+
+  // Get content from a history version
+  ipcMain.handle(IPC_CHANNELS['notes:get-history-content'], async (_, historyPath: string) => {
+    return fs.readFileSync(historyPath, 'utf-8');
+  });
+
+  // Restore a note from history
+  ipcMain.handle(IPC_CHANNELS['notes:restore-from-history'], async (_, noteName: string, historyPath: string) => {
+    const metadata = notesDb.getNoteByName(noteName);
+    if (!metadata) {
+      throw new Error(`Note "${noteName}" not found`);
+    }
+
+    const noteFile = NoteFile.open(metadata.path);
+    
+    // Create backup of current version before restoring
+    noteFile.createBackup(notesDir);
+    
+    // Read history content and write to note
+    const historyContent = fs.readFileSync(historyPath, 'utf-8');
+    noteFile.write(historyContent);
+    
+    // Update database
+    notesDb.touchNote(metadata.id);
+    notesDb.indexNoteContent(metadata.id, noteName, historyContent);
+    
+    return { success: true };
   });
 
   ipcMain.handle(IPC_CHANNELS['notes:reindex'], async () => {
@@ -386,9 +431,8 @@ export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirect
 
   ipcMain.handle(IPC_CHANNELS['app:set-settings'], async (_event, settings: Partial<AppSettings>) => {
     const oldSettings = getSettings();
-    const newSettings = updateSettings(settings);
     
-    // If notesRoot changed, trigger migration
+    // If notesRoot changed, try migration BEFORE saving settings
     if (settings.notesRoot && oldSettings.notesRoot !== settings.notesRoot) {
       const oldPath = oldSettings.notesRoot || path.join(app.getPath('documents'), 'NotNative Notes');
       const newPath = settings.notesRoot;
@@ -431,6 +475,8 @@ export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirect
       }
     }
     
+    // Only save settings if migration succeeded (or wasn't needed)
+    const newSettings = updateSettings(settings);
     return newSettings;
   });
 
@@ -734,6 +780,28 @@ export function registerIpcHandlers(db: Database.Database, notesDir: NotesDirect
       console.error('❌ Failed to clean orphaned attachments:', error);
       return { success: false, error: String(error), cleaned: 0 };
     }
+  });
+
+  // Zoom handlers
+  ipcMain.handle(IPC_CHANNELS['window:get-zoom-level'], async () => {
+    const mainWindow = getMainWindow();
+    if (mainWindow) {
+      return mainWindow.webContents.getZoomFactor();
+    }
+    // Load from settings if window not available
+    const settings = getSettings();
+    return settings.zoomLevel || 1.0;
+  });
+
+  ipcMain.handle(IPC_CHANNELS['window:set-zoom-level'], async (_, zoomFactor: number) => {
+    const mainWindow = getMainWindow();
+    if (mainWindow) {
+      mainWindow.webContents.setZoomFactor(zoomFactor);
+      // Save to settings
+      updateSettings({ zoomLevel: zoomFactor });
+      return { success: true };
+    }
+    return { success: false, error: 'Main window not found' };
   });
 
   console.log('✅ IPC handlers registered');
