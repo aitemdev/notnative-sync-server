@@ -1,186 +1,95 @@
-# NotNative Electron
+# NotNative Sync Server
 
-> Personal Knowledge Management App with AI - Built with Electron, React, and TypeScript
+Backend VPS server for multi-device synchronization of NotNative Electron notes.
 
-![NotNative](./resources/icons/icon.png)
-
-## 🎯 Features
-
-- ✅ **Markdown Editor** with Vim keybindings (Normal/Insert/Visual/Command modes)
-- ✅ **AI Chat** with 40+ tools via OpenRouter
-- ✅ **Databases** (Notion-like) with inline properties `[key::value]`
-- ✅ **Formula support** (SUM, AVERAGE, etc.)
-- ✅ **Graph View** for note connections
-- ✅ **MCP REST API** on port 8788
-- ✅ **Quick Notes** floating window
-- ✅ **System Tray** integration
-- ✅ **i18n** support (Spanish/English)
-- ✅ **Semantic Search** with embeddings
-
-## 🚀 Getting Started
+## Setup
 
 ### Prerequisites
-
 - Node.js 18+
-- npm or yarn
+- PostgreSQL 14+
+- (Optional) MinIO or S3-compatible storage for attachments
 
 ### Installation
 
+1. Install dependencies:
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/notnative-electron.git
-cd notnative-electron
-
-# Install dependencies
+cd vps-server
 npm install
+```
 
-# Start development
+2. Create `.env` file:
+```bash
+cp .env.example .env
+```
+
+3. Configure your `.env` file with database credentials and JWT secrets.
+
+4. Create PostgreSQL database:
+```bash
+createdb notnative_sync
+```
+
+5. Run migrations:
+```bash
+npm run migrate
+```
+
+### Development
+
+```bash
 npm run dev
 ```
 
-### Build
+Server will run on `http://localhost:3000` by default.
+
+### Production
 
 ```bash
-# Build for production
 npm run build
-
-# Build for specific platform
-npm run build:linux
-npm run build:win
-npm run build:mac
+npm start
 ```
 
-## 📁 Project Structure
+## API Endpoints
 
-```
-notnative-electron/
-├── src/
-│   ├── main/              # Electron main process
-│   │   ├── database/      # SQLite with better-sqlite3
-│   │   ├── files/         # File system operations
-│   │   ├── ipc/           # IPC handlers
-│   │   ├── mcp/           # MCP REST API server
-│   │   ├── tray/          # System tray
-│   │   └── windows/       # Window management
-│   │
-│   ├── renderer/          # React frontend
-│   │   ├── components/    # React components
-│   │   ├── hooks/         # Custom hooks
-│   │   ├── stores/        # Zustand stores
-│   │   └── styles/        # CSS styles
-│   │
-│   ├── preload/           # Preload scripts
-│   │
-│   └── shared/            # Shared types and constants
-│
-├── resources/             # Icons and assets
-└── dist/                  # Build output
-```
+### Authentication
+- `POST /api/auth/register` - Register new user
+- `POST /api/auth/login` - Login
+- `POST /api/auth/refresh` - Refresh access token
+- `POST /api/auth/logout` - Logout
 
-## 🔧 Configuration
+### Sync
+- `GET /api/sync/changes?since={timestamp}&deviceId={id}` - Pull changes
+- `POST /api/sync/push` - Push changes
+- `GET /api/sync/status` - Get sync status
 
-### Notes Directory
+### Notes
+- `GET /api/notes` - List all notes
+- `GET /api/notes/:uuid` - Get specific note
+- `DELETE /api/notes/:uuid` - Delete note
 
-By default, notes are stored in `~/Documents/NotNative Notes/`.
+### Attachments
+- `POST /api/attachments` - Upload attachment (TODO)
+- `GET /api/attachments/:hash` - Download attachment (TODO)
 
-### MCP Server
+## Database Schema
 
-The MCP REST API runs on `http://localhost:8788` by default.
+See `src/utils/migrate.ts` for complete schema.
 
-Example usage with curl:
-```bash
-# List all notes
-curl http://localhost:8788/notes
+Main tables:
+- `users` - User accounts
+- `devices` - User devices
+- `notes` - Note metadata and content
+- `sync_log` - Change tracking
+- `attachments` - File metadata
 
-# Search notes
-curl http://localhost:8788/search?q=query
+## Security
 
-# Create a note via JSON-RPC
-curl -X POST http://localhost:8788/rpc \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"create_note","params":{"name":"New Note","content":"# Hello"}}'
-```
+- JWT-based authentication with refresh tokens
+- Bcrypt password hashing (12 rounds)
+- Rate limiting (100 req/15min per IP)
+- Helmet security headers
+- CORS configuration
 
-## ⌨️ Keyboard Shortcuts
+## License
 
-### Global
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+P` | Quick search |
-| `Ctrl+N` | New note |
-| `Ctrl+S` | Save note |
-| `Ctrl+Shift+N` | Quick note window |
-
-### Vim Mode
-| Key | Mode | Action |
-|-----|------|--------|
-| `i` | Normal | Enter Insert mode |
-| `Esc` | Insert | Return to Normal |
-| `v` | Normal | Enter Visual mode |
-| `:w` | Command | Save |
-| `:q` | Command | Close |
-| `dd` | Normal | Delete line |
-| `yy` | Normal | Copy line |
-| `p` | Normal | Paste |
-
-## 🤖 AI Chat Tools
-
-The AI assistant has access to 40+ tools including:
-
-- **Notes**: create, read, update, delete, search
-- **Folders**: list, create, delete
-- **Tags**: add, remove, list
-- **Search**: full-text, semantic
-- **Utility**: daily notes, reminders
-
-## 📝 Inline Properties
-
-Use inline properties in your notes:
-
-```markdown
-# Book Notes
-
-[author::George Orwell]
-[year::1949]
-[rating::5]
-[read::true]
-
-Grouped properties:
-[title::1984, author::Orwell, genre::Dystopian]
-```
-
-## 🗄️ Database Schema
-
-Uses SQLite with FTS5 for full-text search. Main tables:
-- `notes` - Note metadata
-- `tags` - Tags with colors
-- `note_tags` - Note-tag relations
-- `notes_fts` - Full-text search index
-- `inline_properties` - Extracted properties
-- `note_embeddings` - Vector embeddings
-- `chat_sessions` / `chat_messages` - AI chat history
-- `reminders` - Scheduled reminders
-- `bases` - Database configurations
-
-## 🌐 i18n
-
-Supports Spanish and English. Add translations in:
-- `src/main/i18n/es.ts`
-- `src/main/i18n/en.ts`
-
-## 📄 License
-
-MIT License - See [LICENSE](./LICENSE) for details.
-
-## 🙏 Acknowledgments
-
-- Original NotNative by the Rust/GTK4 team
-- [Electron](https://electronjs.org/)
-- [React](https://react.dev/)
-- [CodeMirror](https://codemirror.net/)
-- [better-sqlite3](https://github.com/WiseLibs/better-sqlite3)
-- [Catppuccin](https://github.com/catppuccin) theme
-
----
-
-Built with ❤️ and ☕
+MIT
