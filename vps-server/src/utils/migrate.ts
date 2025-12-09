@@ -47,7 +47,7 @@ CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token ON refresh_tokens(token);
 CREATE TABLE IF NOT EXISTS notes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  uuid VARCHAR(36) UNIQUE NOT NULL,
+  uuid VARCHAR(36) NOT NULL,
   name VARCHAR(500) NOT NULL,
   path TEXT NOT NULL,
   folder VARCHAR(500),
@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS notes (
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
   deleted_at BIGINT,
+  UNIQUE(user_id, uuid),
   UNIQUE(user_id, path)
 );
 
