@@ -5,14 +5,17 @@ WORKDIR /app
 # Copiar package files
 COPY package*.json ./
 
-# Instalar dependencias
-RUN npm ci --only=production
+# Instalar todas las dependencias (incluyendo devDependencies para compilar)
+RUN npm ci
 
 # Copiar código fuente
 COPY . .
 
 # Compilar TypeScript
 RUN npm run build
+
+# Limpiar devDependencies después de compilar
+RUN npm prune --production
 
 # Exponer puerto
 EXPOSE 3000
