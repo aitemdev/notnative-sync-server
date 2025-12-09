@@ -334,13 +334,10 @@ export class WebSocketSyncServer {
    */
   private broadcastToUserDevices(userId: string, excludeDeviceId: string, message: WSMessage): void {
     const userClients = this.clients.get(userId);
-    console.log(`📢 Broadcasting to user ${userId} (excluding device ${excludeDeviceId})`);
-    console.log(`   Total clients for user: ${userClients?.size || 0}`);
     if (!userClients) return;
 
     userClients.forEach((client) => {
       if (client.deviceId !== excludeDeviceId && client.readyState === WebSocket.OPEN) {
-        console.log(`   ➡️  Sending to device: ${client.deviceId}, readyState: ${client.readyState === 1 ? "OPEN" : "CLOSED"}`);
         client.send(JSON.stringify(message));
       }
     });
