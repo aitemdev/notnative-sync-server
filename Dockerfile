@@ -14,15 +14,16 @@ COPY . .
 # Compilar TypeScript
 RUN npm run build
 
-# NO eliminamos devDependencies en Docker porque necesitamos ejecutar migraciones
-# Para deployment directo al VPS sin Docker, se usa setup.sh que sí hace npm prune
+# Limpiar devDependencies después de compilar
+RUN npm prune --production
 
-# Exponer puerto
-EXPOSE 3000
+# Exponer puertos (HTTP API + WebSocket)
+EXPOSE 3000 3001
 
 # Variables de entorno por defecto
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV WS_PORT=3001
 
 # Comando de inicio
 CMD ["node", "dist/index.js"]

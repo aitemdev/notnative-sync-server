@@ -24,6 +24,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
+      WS_PORT: 3001
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: notnative_sync
@@ -34,6 +35,7 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
     ports:
       - "3000:3000"
+      - "3001:3001"
     networks:
       - notnative-network
     restart: unless-stopped

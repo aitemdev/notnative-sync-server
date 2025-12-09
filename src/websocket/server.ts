@@ -1,0 +1,388 @@
+import { WebSocketServer, WebSocket } from 'ws';
+import { IncomingMessage } from 'http';
+import jwt from 'jsonwebtoken';
+import pool from '../utils/db';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+
+interface AuthenticatedWebSocket extends WebSocket {
+  userId?: string;
+  deviceId?: string;
+  isAlive?: boolean;
+}
+
+interface WSMessage {
+  type: 'sync:push' | 'sync:pull-request' | 'heartbeat' | 'pong';
+  data?: any;
+}
+
+/**
+ * WebSocket Sync Server
+ * Manages real-time bidirectional sync between devices
+ */
+export class WebSocketSyncServer {
+  private wss: WebSocketServer;
+  private clients: Map<string, Set<AuthenticatedWebSocket>> = new Map(); // userId -> Set<WebSocket>
+  private heartbeatInterval?: NodeJS.Timeout;
+
+  constructor(port: number) {
+    this.wss = new WebSocketServer({ 
+      port,
+      verifyClient: this.verifyClient.bind(this),
+    });
+
+    console.log(`🔌 WebSocket Server listening on port ${port}`);
+    
+    this.wss.on('connection', this.handleConnection.bind(this));
+    this.startHeartbeat();
+  }
+
+  /**
+   * Verify client authentication during handshake
+   */
+  private verifyClient(info: { origin: string; secure: boolean; req: IncomingMessage }, callback: (result: boolean, code?: number, message?: string) => void): void {
+    const url = new URL(info.req.url || '', `ws://${info.req.headers.host}`);
+    const token = url.searchParams.get('token');
+    const deviceId = url.searchParams.get('deviceId');
+
+    if (!token || !deviceId) {
+      callback(false, 401, 'Missing authentication credentials');
+      return;
+    }
+
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
+      
+      // Attach userId and deviceId to the request for use in handleConnection
+      (info.req as any).userId = decoded.userId;
+      (info.req as any).deviceId = deviceId;
+      
+      callback(true);
+    } catch (error) {
+      console.error('❌ WS Auth failed:', error);
+      callback(false, 403, 'Invalid token');
+    }
+  }
+
+  /**
+   * Handle new WebSocket connection
+   */
+  private handleConnection(ws: AuthenticatedWebSocket, req: IncomingMessage): void {
+    const userId = (req as any).userId;
+    const deviceId = (req as any).deviceId;
+
+    ws.userId = userId;
+    ws.deviceId = deviceId;
+    ws.isAlive = true;
+
+    console.log(`✅ WS Client connected - User: ${userId}, Device: ${deviceId}`);
+
+    // Add to clients map
+    if (!this.clients.has(userId)) {
+      this.clients.set(userId, new Set());
+    }
+    this.clients.get(userId)!.add(ws);
+
+    // Setup event handlers
+    ws.on('message', (data: Buffer) => this.handleMessage(ws, data));
+    ws.on('pong', () => { ws.isAlive = true; });
+    ws.on('close', () => this.handleDisconnect(ws));
+    ws.on('error', (error) => console.error('❌ WS Error:', error));
+
+    // Send welcome message
+    this.sendToClient(ws, {
+      type: 'heartbeat',
+      data: { message: 'Connected to sync server', timestamp: Date.now() },
+    });
+  }
+
+  /**
+   * Handle incoming messages from clients
+   */
+  private async handleMessage(ws: AuthenticatedWebSocket, data: Buffer): Promise<void> {
+    try {
+      const message: WSMessage = JSON.parse(data.toString());
+
+      switch (message.type) {
+        case 'sync:push':
+          await this.handleSyncPush(ws, message.data);
+          break;
+
+        case 'sync:pull-request':
+          await this.handlePullRequest(ws, message.data);
+          break;
+
+        case 'heartbeat':
+          ws.isAlive = true;
+          this.sendToClient(ws, { type: 'pong', data: { timestamp: Date.now() } });
+          break;
+
+        default:
+          console.warn('⚠️ Unknown message type:', message.type);
+      }
+    } catch (error) {
+      console.error('❌ Error handling message:', error);
+      this.sendToClient(ws, {
+        type: 'sync:push',
+        data: { success: false, error: 'Failed to process message' },
+      });
+    }
+  }
+
+  /**
+   * Handle sync push from client
+   */
+  private async handleSyncPush(ws: AuthenticatedWebSocket, changes: any[]): Promise<void> {
+    const userId = ws.userId!;
+    const deviceId = ws.deviceId!;
+
+    console.log(`📤 WS Push from ${deviceId}: ${changes.length} changes`);
+
+    const conflicts: any[] = [];
+    const applied: any[] = [];
+
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      for (const change of changes) {
+        const { entityType, entityId, operation, dataJson, timestamp } = change;
+
+        // Handle note operations
+        if (entityType === 'note') {
+          if (operation === 'create' || operation === 'update') {
+            // Check for conflicts
+            const existingNote = await client.query(
+              'SELECT updated_at FROM notes WHERE user_id = $1 AND uuid = $2',
+              [userId, entityId]
+            );
+
+            if (existingNote.rows.length > 0) {
+              const serverUpdatedAt = parseInt(existingNote.rows[0].updated_at);
+
+              if (serverUpdatedAt > timestamp) {
+                conflicts.push({
+                  entityType,
+                  entityId,
+                  localTimestamp: timestamp,
+                  serverTimestamp: serverUpdatedAt,
+                  operation,
+                });
+                continue;
+              }
+            }
+
+            // Upsert note
+            await client.query(
+              `INSERT INTO notes 
+                (user_id, uuid, name, path, folder, content, order_index, icon, icon_color, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+               ON CONFLICT (user_id, uuid) 
+               DO UPDATE SET 
+                 name = EXCLUDED.name,
+                 path = EXCLUDED.path,
+                 folder = EXCLUDED.folder,
+                 content = EXCLUDED.content,
+                 order_index = EXCLUDED.order_index,
+                 icon = EXCLUDED.icon,
+                 icon_color = EXCLUDED.icon_color,
+                 updated_at = EXCLUDED.updated_at`,
+              [
+                userId,
+                entityId,
+                dataJson.name,
+                dataJson.path,
+                dataJson.folder,
+                dataJson.content,
+                dataJson.orderIndex || 0,
+                dataJson.icon || null,
+                dataJson.iconColor || null,
+                dataJson.createdAt || Date.now(),
+                dataJson.updatedAt || Date.now(),
+              ]
+            );
+
+            applied.push({ entityType, entityId, operation });
+          } else if (operation === 'delete') {
+            await client.query(
+              'UPDATE notes SET deleted_at = $1 WHERE user_id = $2 AND uuid = $3',
+              [Date.now(), userId, entityId]
+            );
+            applied.push({ entityType, entityId, operation });
+          }
+        }
+      }
+
+      await client.query('COMMIT');
+
+      // Send success response to sender
+      this.sendToClient(ws, {
+        type: 'sync:push',
+        data: { success: true, conflicts, applied },
+      });
+
+      // Broadcast to other devices of the same user
+      if (applied.length > 0) {
+        this.broadcastToUserDevices(userId, deviceId, {
+          type: 'sync:pull-request',
+          data: { timestamp: Date.now(), changesCount: applied.length },
+        });
+      }
+
+      console.log(`✅ WS Push completed - Applied: ${applied.length}, Conflicts: ${conflicts.length}`);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('❌ WS Push error:', error);
+      this.sendToClient(ws, {
+        type: 'sync:push',
+        data: { success: false, error: 'Failed to apply changes' },
+      });
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Handle pull request from client
+   */
+  private async handlePullRequest(ws: AuthenticatedWebSocket, data: { since: number }): Promise<void> {
+    const userId = ws.userId!;
+    const deviceId = ws.deviceId!;
+    const since = data.since || 0;
+
+    console.log(`📥 WS Pull request from ${deviceId} since ${since}`);
+
+    try {
+      // Query changes since timestamp
+      const result = await pool.query(
+        `SELECT uuid, name, path, folder, content, order_index, icon, icon_color, 
+                created_at, updated_at, deleted_at
+         FROM notes
+         WHERE user_id = $1 AND updated_at > $2
+         ORDER BY updated_at ASC
+         LIMIT 1000`,
+        [userId, since]
+      );
+
+      const changes = result.rows.map((note: any) => ({
+        entityType: 'note',
+        entityId: note.uuid,
+        operation: note.deleted_at ? 'delete' : 'update',
+        dataJson: {
+          uuid: note.uuid,
+          name: note.name,
+          path: note.path,
+          folder: note.folder,
+          content: note.content,
+          orderIndex: note.order_index,
+          icon: note.icon,
+          iconColor: note.icon_color,
+          createdAt: parseInt(note.created_at),
+          updatedAt: parseInt(note.updated_at),
+          deletedAt: note.deleted_at ? parseInt(note.deleted_at) : null,
+        },
+        timestamp: parseInt(note.updated_at),
+      }));
+
+      this.sendToClient(ws, {
+        type: 'sync:pull-request',
+        data: { success: true, changes },
+      });
+
+      console.log(`✅ WS Pull completed - Sent ${changes.length} changes`);
+    } catch (error) {
+      console.error('❌ WS Pull error:', error);
+      this.sendToClient(ws, {
+        type: 'sync:pull-request',
+        data: { success: false, error: 'Failed to fetch changes' },
+      });
+    }
+  }
+
+  /**
+   * Handle client disconnect
+   */
+  private handleDisconnect(ws: AuthenticatedWebSocket): void {
+    const userId = ws.userId;
+    const deviceId = ws.deviceId;
+
+    console.log(`❌ WS Client disconnected - User: ${userId}, Device: ${deviceId}`);
+
+    if (userId) {
+      const userClients = this.clients.get(userId);
+      if (userClients) {
+        userClients.delete(ws);
+        if (userClients.size === 0) {
+          this.clients.delete(userId);
+        }
+      }
+    }
+  }
+
+  /**
+   * Send message to specific client
+   */
+  private sendToClient(ws: WebSocket, message: WSMessage): void {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(message));
+    }
+  }
+
+  /**
+   * Broadcast message to all devices of a user except the sender
+   */
+  private broadcastToUserDevices(userId: string, excludeDeviceId: string, message: WSMessage): void {
+    const userClients = this.clients.get(userId);
+    if (!userClients) return;
+
+    userClients.forEach((client) => {
+      if (client.deviceId !== excludeDeviceId && client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify(message));
+      }
+    });
+  }
+
+  /**
+   * Start heartbeat to detect dead connections
+   */
+  private startHeartbeat(): void {
+    this.heartbeatInterval = setInterval(() => {
+      this.wss.clients.forEach((ws: WebSocket) => {
+        const client = ws as AuthenticatedWebSocket;
+        
+        if (client.isAlive === false) {
+          console.log(`💀 Terminating dead connection - User: ${client.userId}, Device: ${client.deviceId}`);
+          return client.terminate();
+        }
+
+        client.isAlive = false;
+        client.ping();
+      });
+    }, 30000); // 30 seconds
+  }
+
+  /**
+   * Gracefully shutdown the server
+   */
+  async shutdown(): Promise<void> {
+    console.log('🛑 Shutting down WebSocket server...');
+
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+    }
+
+    // Close all connections
+    this.wss.clients.forEach((ws) => {
+      ws.close(1000, 'Server shutting down');
+    });
+
+    // Close server
+    await new Promise<void>((resolve) => {
+      this.wss.close(() => {
+        console.log('✅ WebSocket server closed');
+        resolve();
+      });
+    });
+  }
+}
