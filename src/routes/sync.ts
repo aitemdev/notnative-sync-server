@@ -39,62 +39,103 @@ router.get('/changes', async (req: AuthRequest, res: Response) => {
     
     const userId = req.userId!;
     
-    // Get all changes since timestamp, excluding changes from the requesting device
-    const result = await pool.query(
-      `SELECT 
-        id, entity_type, entity_id, operation, data_json, timestamp, device_id
-       FROM sync_log
-       WHERE user_id = $1 
-         AND ($2::BIGINT IS NULL OR timestamp > $2)
-         AND device_id != $3
-       ORDER BY timestamp ASC
-       LIMIT $4`,
-      [userId, since || null, deviceId, limit]
-    );
+    let changes: any[] = [];
     
-    const changes = result.rows.map((row: any) => ({
-      id: row.id,
-      entityType: row.entity_type,
-      entityId: row.entity_id,
-      operation: row.operation,
-      dataJson: row.data_json,
-      timestamp: parseInt(row.timestamp),
-      deviceId: row.device_id,
-    }));
-    
-    // Get full note content for note changes
-    const noteChanges = changes.filter((c: any) => c.entityType === 'note' && c.operation !== 'delete');
-    
-    if (noteChanges.length > 0) {
-      const noteUuids = noteChanges.map((c: any) => c.entityId);
+    // If since is 0 or not provided, this is an initial sync - return ALL notes
+    if (!since || since === 0) {
+      console.log(`[Sync] Initial sync requested for user ${userId}, device ${deviceId}`);
+      
       const notesResult = await pool.query(
         `SELECT uuid, name, path, folder, content, order_index, icon, icon_color, 
                 created_at, updated_at, deleted_at
          FROM notes
-         WHERE user_id = $1 AND uuid = ANY($2)`,
-        [userId, noteUuids]
+         WHERE user_id = $1 AND deleted_at IS NULL
+         ORDER BY created_at ASC
+         LIMIT $2`,
+        [userId, limit]
       );
       
-      // Merge note content into changes
-      const notesMap = new Map(notesResult.rows.map((n: any) => [n.uuid, n]));
+      changes = notesResult.rows.map((note: any) => ({
+        id: note.uuid,
+        entityType: 'note',
+        entityId: note.uuid,
+        operation: 'create',
+        dataJson: {
+          uuid: note.uuid,
+          name: note.name,
+          path: note.path,
+          folder: note.folder,
+          content: note.content,
+          orderIndex: note.order_index,
+          icon: note.icon,
+          iconColor: note.icon_color,
+          createdAt: parseInt(note.created_at),
+          updatedAt: parseInt(note.updated_at),
+          deletedAt: note.deleted_at ? parseInt(note.deleted_at) : null,
+        },
+        timestamp: parseInt(note.created_at),
+        deviceId: 'server',
+      }));
       
-      for (const change of noteChanges) {
-        const note = notesMap.get(change.entityId) as any;
-        if (note) {
-          change.dataJson = {
-            ...change.dataJson,
-            uuid: note.uuid,
-            name: note.name,
-            path: note.path,
-            folder: note.folder,
-            content: note.content,
-            orderIndex: note.order_index,
-            icon: note.icon,
-            iconColor: note.icon_color,
-            createdAt: parseInt(note.created_at),
-            updatedAt: parseInt(note.updated_at),
-            deletedAt: note.deleted_at ? parseInt(note.deleted_at) : null,
-          };
+      console.log(`[Sync] Initial sync returning ${changes.length} notes`);
+    } else {
+      // Regular incremental sync - get changes since timestamp
+      const result = await pool.query(
+        `SELECT 
+          id, entity_type, entity_id, operation, data_json, timestamp, device_id
+         FROM sync_log
+         WHERE user_id = $1 
+           AND timestamp > $2
+           AND device_id != $3
+         ORDER BY timestamp ASC
+         LIMIT $4`,
+        [userId, since, deviceId, limit]
+      );
+      
+      changes = result.rows.map((row: any) => ({
+        id: row.id,
+        entityType: row.entity_type,
+        entityId: row.entity_id,
+        operation: row.operation,
+        dataJson: row.data_json,
+        timestamp: parseInt(row.timestamp),
+        deviceId: row.device_id,
+      }));
+      
+      // Get full note content for note changes
+      const noteChanges = changes.filter((c: any) => c.entityType === 'note' && c.operation !== 'delete');
+      
+      if (noteChanges.length > 0) {
+        const noteUuids = noteChanges.map((c: any) => c.entityId);
+        const notesResult = await pool.query(
+          `SELECT uuid, name, path, folder, content, order_index, icon, icon_color, 
+                  created_at, updated_at, deleted_at
+           FROM notes
+           WHERE user_id = $1 AND uuid = ANY($2)`,
+          [userId, noteUuids]
+        );
+        
+        // Merge note content into changes
+        const notesMap = new Map(notesResult.rows.map((n: any) => [n.uuid, n]));
+        
+        for (const change of noteChanges) {
+          const note = notesMap.get(change.entityId) as any;
+          if (note) {
+            change.dataJson = {
+              ...change.dataJson,
+              uuid: note.uuid,
+              name: note.name,
+              path: note.path,
+              folder: note.folder,
+              content: note.content,
+              orderIndex: note.order_index,
+              icon: note.icon,
+              iconColor: note.icon_color,
+              createdAt: parseInt(note.created_at),
+              updatedAt: parseInt(note.updated_at),
+              deletedAt: note.deleted_at ? parseInt(note.deleted_at) : null,
+            };
+          }
         }
       }
     }
