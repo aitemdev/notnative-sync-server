@@ -106,7 +106,7 @@ router.get('/changes', async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid input', details: error.errors });
+      return res.status(400).json({ error: 'Invalid input', details: (error as any).errors });
     }
     
     console.error('Pull changes error:', error);
@@ -222,7 +222,7 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
     }
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid input', details: error.errors });
+      return res.status(400).json({ error: 'Invalid input', details: (error as any).errors });
     }
     
     console.error('Push changes error:', error);

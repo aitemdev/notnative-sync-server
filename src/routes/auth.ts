@@ -98,7 +98,7 @@ router.post('/register', async (req: Request, res: Response) => {
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid input', details: error.errors });
+      return res.status(400).json({ error: 'Invalid input', details: (error as any).errors });
     }
     
     console.error('Register error:', error);
@@ -164,7 +164,7 @@ router.post('/login', async (req: Request, res: Response) => {
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid input', details: error.errors });
+      return res.status(400).json({ error: 'Invalid input', details: (error as any).errors });
     }
     
     console.error('Login error:', error);
@@ -201,7 +201,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
     res.json({ accessToken });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid input', details: error.errors });
+      return res.status(400).json({ error: 'Invalid input', details: (error as any).errors });
     }
     
     if (error instanceof jwt.JsonWebTokenError) {
@@ -224,7 +224,7 @@ router.post('/logout', async (req: Request, res: Response) => {
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid input', details: error.errors });
+      return res.status(400).json({ error: 'Invalid input', details: (error as any).errors });
     }
     
     console.error('Logout error:', error);
