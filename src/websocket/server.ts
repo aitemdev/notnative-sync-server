@@ -212,6 +212,58 @@ export class WebSocketSyncServer {
             applied.push({ entityType, entityId, operation });
           }
         }
+        
+        // Handle attachment operations
+        if (entityType === 'attachment') {
+          if (operation === 'create') {
+            // Verify attachment exists and belongs to user
+            const existingAttachment = await client.query(
+              'SELECT id FROM attachments WHERE id = $1 AND user_id = $2',
+              [entityId, userId]
+            );
+            
+            if (existingAttachment.rows.length > 0) {
+              // Log to sync_log
+              await client.query(
+                `INSERT INTO sync_log 
+                  (user_id, device_id, entity_type, entity_id, operation, data_json, timestamp)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                [userId, deviceId, entityType, entityId, operation, dataJson, timestamp]
+              );
+              
+              applied.push({ entityType, entityId, operation });
+            }
+          } else if (operation === 'delete') {
+            // Mark attachment as deleted
+            await client.query(
+              'UPDATE attachments SET deleted_at = $1 WHERE id = $2 AND user_id = $3',
+              [Date.now(), entityId, userId]
+            );
+            
+            // Update user storage
+            const attachmentInfo = await client.query(
+              'SELECT file_size FROM attachments WHERE id = $1 AND user_id = $2',
+              [entityId, userId]
+            );
+            
+            if (attachmentInfo.rows.length > 0) {
+              await client.query(
+                'UPDATE users SET storage_used = storage_used - $1 WHERE id = $2',
+                [attachmentInfo.rows[0].file_size, userId]
+              );
+            }
+            
+            // Log to sync_log
+            await client.query(
+              `INSERT INTO sync_log 
+                (user_id, device_id, entity_type, entity_id, operation, data_json, timestamp)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+              [userId, deviceId, entityType, entityId, operation, dataJson, timestamp]
+            );
+            
+            applied.push({ entityType, entityId, operation });
+          }
+        }
       }
 
       await client.query('COMMIT');
@@ -262,8 +314,8 @@ export class WebSocketSyncServer {
     console.log(`📥 WS Pull request from ${deviceId} since ${since}`);
 
     try {
-      // Query changes since timestamp
-      const result = await pool.query(
+      // Query note changes since timestamp
+      const notesResult = await pool.query(
         `SELECT uuid, name, path, folder, content, order_index, icon, icon_color, 
                 created_at, updated_at, deleted_at
          FROM notes
@@ -273,7 +325,7 @@ export class WebSocketSyncServer {
         [userId, since]
       );
 
-      const changes = result.rows.map((note: any) => ({
+      const noteChanges = notesResult.rows.map((note: any) => ({
         entityType: 'note',
         entityId: note.uuid,
         operation: note.deleted_at ? 'delete' : 'update',
@@ -292,13 +344,42 @@ export class WebSocketSyncServer {
         },
         timestamp: parseInt(note.updated_at),
       }));
+      
+      // Query attachment changes since timestamp
+      const attachmentsResult = await pool.query(
+        `SELECT id, note_uuid, file_name, file_hash, file_size, mime_type, created_at, deleted_at
+         FROM attachments
+         WHERE user_id = $1 AND created_at > $2
+         ORDER BY created_at ASC
+         LIMIT 1000`,
+        [userId, since]
+      );
+      
+      const attachmentChanges = attachmentsResult.rows.map((att: any) => ({
+        entityType: 'attachment',
+        entityId: att.id,
+        operation: att.deleted_at ? 'delete' : 'create',
+        dataJson: {
+          id: att.id,
+          noteUuid: att.note_uuid,
+          fileName: att.file_name,
+          fileHash: att.file_hash,
+          fileSize: parseInt(att.file_size),
+          mimeType: att.mime_type,
+          createdAt: parseInt(att.created_at),
+          deletedAt: att.deleted_at ? parseInt(att.deleted_at) : null,
+        },
+        timestamp: parseInt(att.created_at),
+      }));
+      
+      const changes = [...noteChanges, ...attachmentChanges];
 
       this.sendToClient(ws, {
         type: 'sync:pull-request',
         data: { success: true, changes },
       });
 
-      console.log(`✅ WS Pull completed - Sent ${changes.length} changes`);
+      console.log(`✅ WS Pull completed - Sent ${noteChanges.length} notes, ${attachmentChanges.length} attachments`);
     } catch (error) {
       console.error('❌ WS Pull error:', error);
       this.sendToClient(ws, {

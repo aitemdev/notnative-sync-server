@@ -94,4 +94,47 @@ router.patch('/', authenticateToken, async (req: AuthRequest, res: Response) => 
   }
 });
 
+// GET /api/settings/storage - Get storage usage info
+router.get('/storage', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    
+    const result = await pool.query(
+      'SELECT storage_used, storage_limit FROM users WHERE id = $1',
+      [userId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const used = parseInt(result.rows[0].storage_used, 10);
+    const limit = parseInt(result.rows[0].storage_limit, 10);
+    const available = Math.max(0, limit - used);
+    const percentage = limit > 0 ? Math.round((used / limit) * 100) : 0;
+    
+    res.json({ 
+      used, 
+      limit, 
+      available, 
+      percentage,
+      usedFormatted: formatBytes(used),
+      limitFormatted: formatBytes(limit),
+      availableFormatted: formatBytes(available),
+    });
+  } catch (error) {
+    console.error('Error fetching storage info:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Helper function to format bytes
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+
 export default router;

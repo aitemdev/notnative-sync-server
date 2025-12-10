@@ -78,6 +78,36 @@ router.get('/changes', async (req: AuthRequest, res: Response) => {
       }));
       
       console.log(`[Sync] Initial sync returning ${changes.length} notes`);
+      
+      // Include attachments in initial sync
+      const attachmentsResult = await pool.query(
+        `SELECT id, note_uuid, file_name, file_hash, file_size, mime_type, created_at
+         FROM attachments
+         WHERE user_id = $1 AND deleted_at IS NULL
+         ORDER BY created_at ASC`,
+        [userId]
+      );
+      
+      const attachmentChanges = attachmentsResult.rows.map((att: any) => ({
+        id: att.id,
+        entityType: 'attachment',
+        entityId: att.id,
+        operation: 'create',
+        dataJson: {
+          id: att.id,
+          noteUuid: att.note_uuid,
+          fileName: att.file_name,
+          fileHash: att.file_hash,
+          fileSize: parseInt(att.file_size),
+          mimeType: att.mime_type,
+          createdAt: parseInt(att.created_at),
+        },
+        timestamp: parseInt(att.created_at),
+        deviceId: 'server',
+      }));
+      
+      changes = [...changes, ...attachmentChanges];
+      console.log(`[Sync] Initial sync including ${attachmentChanges.length} attachments`);
     } else {
       // Regular incremental sync - get changes since timestamp
       const result = await pool.query(
@@ -134,6 +164,37 @@ router.get('/changes', async (req: AuthRequest, res: Response) => {
               createdAt: parseInt(note.created_at),
               updatedAt: parseInt(note.updated_at),
               deletedAt: note.deleted_at ? parseInt(note.deleted_at) : null,
+            };
+          }
+        }
+      }
+      
+      // Get full attachment metadata for attachment changes
+      const attachmentChanges = changes.filter((c: any) => c.entityType === 'attachment' && c.operation !== 'delete');
+      
+      if (attachmentChanges.length > 0) {
+        const attachmentIds = attachmentChanges.map((c: any) => c.entityId);
+        const attachmentsResult = await pool.query(
+          `SELECT id, note_uuid, file_name, file_hash, file_size, mime_type, created_at
+           FROM attachments
+           WHERE user_id = $1 AND id = ANY($2) AND deleted_at IS NULL`,
+          [userId, attachmentIds]
+        );
+        
+        const attachmentsMap = new Map(attachmentsResult.rows.map((a: any) => [a.id, a]));
+        
+        for (const change of attachmentChanges) {
+          const att = attachmentsMap.get(change.entityId) as any;
+          if (att) {
+            change.dataJson = {
+              ...change.dataJson,
+              id: att.id,
+              noteUuid: att.note_uuid,
+              fileName: att.file_name,
+              fileHash: att.file_hash,
+              fileSize: parseInt(att.file_size),
+              mimeType: att.mime_type,
+              createdAt: parseInt(att.created_at),
             };
           }
         }
@@ -245,6 +306,58 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
           applied.push({ entityType, entityId, operation });
         }
         
+        // Handle attachment operations
+        if (entityType === 'attachment') {
+          if (operation === 'create') {
+            // Verify attachment exists and belongs to user
+            const existingAttachment = await client.query(
+              'SELECT id FROM attachments WHERE id = $1 AND user_id = $2',
+              [entityId, userId]
+            );
+            
+            if (existingAttachment.rows.length > 0) {
+              // Log sync
+              await client.query(
+                `INSERT INTO sync_log 
+                  (user_id, device_id, entity_type, entity_id, operation, data_json, timestamp)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                [userId, deviceId, entityType, entityId, operation, dataJson, timestamp]
+              );
+              
+              applied.push({ entityType, entityId, operation });
+            }
+          } else if (operation === 'delete') {
+            // Mark attachment as deleted
+            await client.query(
+              `UPDATE attachments SET deleted_at = $1 WHERE id = $2 AND user_id = $3`,
+              [timestamp, entityId, userId]
+            );
+            
+            // Update user storage
+            const attachmentInfo = await client.query(
+              'SELECT file_size FROM attachments WHERE id = $1 AND user_id = $2',
+              [entityId, userId]
+            );
+            
+            if (attachmentInfo.rows.length > 0) {
+              await client.query(
+                'UPDATE users SET storage_used = storage_used - $1 WHERE id = $2',
+                [attachmentInfo.rows[0].file_size, userId]
+              );
+            }
+            
+            // Log sync
+            await client.query(
+              `INSERT INTO sync_log 
+                (user_id, device_id, entity_type, entity_id, operation, data_json, timestamp)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+              [userId, deviceId, entityType, entityId, operation, dataJson, timestamp]
+            );
+            
+            applied.push({ entityType, entityId, operation });
+          }
+        }
+        
         // TODO: Handle other entity types (folders, tags, etc.)
       }
       
@@ -299,6 +412,69 @@ router.get('/status', async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     console.error('Sync status error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/sync/attachment/:id/download - Download attachment during sync
+router.get('/attachment/:id/download', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const { id } = req.params;
+
+    // Obtener metadata del attachment
+    const result = await pool.query(
+      `SELECT id, user_id, file_name, file_hash, file_size, mime_type, s3_key, deleted_at
+       FROM attachments
+       WHERE id = $1`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Attachment not found' });
+    }
+
+    const attachment = result.rows[0];
+
+    // Verificar que el usuario tiene acceso
+    if (attachment.user_id !== userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Verificar que no esté eliminado
+    if (attachment.deleted_at) {
+      return res.status(410).json({ error: 'Attachment has been deleted' });
+    }
+
+    const fs = require('fs');
+    const path = require('path');
+    const UPLOAD_DIR = process.env.UPLOAD_DIR || '/app/uploads';
+    const filePath = path.join(UPLOAD_DIR, attachment.s3_key);
+
+    // Verificar que el archivo existe
+    if (!fs.existsSync(filePath)) {
+      console.error(`File not found: ${filePath}`);
+      return res.status(404).json({ error: 'File not found on server' });
+    }
+
+    // Configurar headers
+    res.setHeader('Content-Type', attachment.mime_type || 'application/octet-stream');
+    res.setHeader('Content-Length', attachment.file_size);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(attachment.file_name)}"`);
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+
+    // Stream del archivo
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+
+    fileStream.on('error', (error: any) => {
+      console.error('Stream error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Error streaming file' });
+      }
+    });
+  } catch (error) {
+    console.error('Download attachment during sync error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

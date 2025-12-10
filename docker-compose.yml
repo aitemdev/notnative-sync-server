@@ -33,6 +33,10 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      UPLOAD_DIR: /app/uploads
+      MAX_FILE_SIZE: ${MAX_FILE_SIZE:-10485760}
+    volumes:
+      - uploads_data:/app/uploads
     ports:
       - "3000:3000"
       - "3001:3001"
@@ -43,6 +47,7 @@ services:
 
 volumes:
   postgres_data:
+  uploads_data:
 
 networks:
   notnative-network:
