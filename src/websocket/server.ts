@@ -173,6 +173,11 @@ export class WebSocketSyncServer {
               }
             }
 
+            // Debug log: verificar contenido recibido via WebSocket
+            console.log(`[WS] Updating note ${entityId} from device ${deviceId}`);
+            console.log(`[WS] Content length: ${dataJson.content?.length || 0}`);
+            console.log(`[WS] Last 50 chars: "${dataJson.content?.slice(-50) || ''}"`);
+
             // Upsert note
             await client.query(
               `INSERT INTO notes 

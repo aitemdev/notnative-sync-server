@@ -258,6 +258,11 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
               }
             }
             
+            // Debug log: verificar contenido recibido
+            console.log(`[SYNC] Updating note ${entityId}`);
+            console.log(`[SYNC] Content length: ${dataJson.content?.length || 0}`);
+            console.log(`[SYNC] Last 50 chars: "${dataJson.content?.slice(-50) || ''}"`);
+            
             // Upsert note
             await client.query(
               `INSERT INTO notes 
