@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
 import { pool } from '../utils/db';
-import { AuthenticatedRequest, authenticate } from '../middleware/auth';
+import { AuthRequest, authenticateToken } from '../middleware/auth';
 
 const router = Router();
 
@@ -14,7 +14,7 @@ const settingsSchema = z.object({
 });
 
 // GET /api/settings - Get user settings
-router.get('/', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.userId!;
     
@@ -37,7 +37,7 @@ router.get('/', authenticate, async (req: AuthenticatedRequest, res: Response) =
 });
 
 // PUT /api/settings - Update user settings
-router.put('/', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+router.put('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.userId!;
     const settings = settingsSchema.parse(req.body);
@@ -59,7 +59,7 @@ router.put('/', authenticate, async (req: AuthenticatedRequest, res: Response) =
 });
 
 // PATCH /api/settings - Partially update user settings
-router.patch('/', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.userId!;
     const partialSettings = settingsSchema.partial().parse(req.body);
