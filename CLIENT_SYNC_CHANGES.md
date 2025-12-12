@@ -157,6 +157,72 @@ async function applyChange(change: Change) {
 }
 ```
 
+### ⚠️ IMPORTANTE: Evitar Loop Infinito
+
+**NO hagas push de cambios que recibiste del servidor en un pull**. Ejemplo de lo que NO hacer:
+
+```typescript
+// ❌ MAL - Causa loop infinito
+async function performSyncPull() {
+  const { changes } = await fetch('/api/sync/changes?since=...').then(r => r.json());
+  
+  for (const change of changes) {
+    await saveNoteLocally(change.dataJson);
+    
+    // ❌ NUNCA HAGAS ESTO: Re-encolar para push
+    await enqueueSyncChange(change); // ¡Loop infinito!
+  }
+}
+```
+
+**Solución correcta:**
+
+```typescript
+// ✅ BIEN - Solo guarda localmente, NO hace push
+async function performSyncPull() {
+  const { changes } = await fetch('/api/sync/changes?since=...').then(r => r.json());
+  
+  for (const change of changes) {
+    // Solo guardar localmente, NO encolar para push
+    await saveNoteLocally(change.dataJson);
+    
+    // Actualizar timestamp local para no volver a enviar
+    await updateLocalTimestamp(change.entityId, change.timestamp);
+  }
+}
+
+// ✅ Solo hacer push de cambios originados localmente
+async function onNoteChangedByUser(note: Note) {
+  const change = {
+    ...note,
+    timestamp: Date.now(), // Timestamp NUEVO
+    deviceId: getDeviceId(),
+    synced: false,
+  };
+  
+  await enqueueSyncChange(change);
+  await performSyncPush([change]);
+}
+```
+
+### Verificar timestamps antes de enviar
+
+```typescript
+async function getPendingChanges(): Promise<Change[]> {
+  const allChanges = await getAllLocalChanges();
+  
+  // Filtrar cambios que ya están sincronizados
+  const pending = allChanges.filter(change => {
+    const serverTimestamp = getLastServerTimestamp(change.entityId);
+    
+    // Solo enviar si nuestro timestamp es más reciente
+    return !change.synced && change.timestamp > serverTimestamp;
+  });
+  
+  return pending;
+}
+```
+
 ### Importante
 
 - **La metadata se sincroniza automáticamente** vía `/api/sync/changes`

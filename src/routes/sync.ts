@@ -256,7 +256,13 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
             if (existingNote.rows.length > 0) {
               const serverUpdatedAt = parseInt(existingNote.rows[0].updated_at);
               
-              // Conflict if server version is newer and different device
+              // Skip if timestamps are equal (already synced)
+              if (serverUpdatedAt === timestamp) {
+                console.log(`[SYNC] Skipping note ${entityId} - already up to date (ts: ${timestamp})`);
+                continue;
+              }
+              
+              // Conflict if server version is newer
               if (serverUpdatedAt > timestamp) {
                 conflicts.push({
                   entityType,
@@ -269,10 +275,7 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
               }
             }
             
-            // Debug log: verificar contenido recibido
-            console.log(`[SYNC] Updating note ${entityId}`);
-            console.log(`[SYNC] Content length: ${dataJson.content?.length || 0}`);
-            console.log(`[SYNC] Last 50 chars: "${dataJson.content?.slice(-50) || ''}"`);
+            console.log(`[SYNC] Updating note ${entityId} from device ${deviceId} (ts: ${timestamp})`);
             
             // Upsert note
             await client.query(
