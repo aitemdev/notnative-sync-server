@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
 
 import authRoutes from './routes/auth';
-import syncRoutes from './routes/sync';
+import syncRoutes, { setWebSocketServer } from './routes/sync';
 import notesRoutes from './routes/notes';
 import attachmentsRoutes from './routes/attachments';
 import settingsRoutes from './routes/settings';
@@ -65,6 +65,12 @@ app.listen(PORT, () => {
 
 // Start WebSocket server
 const wsServer = new WebSocketSyncServer(WS_PORT);
+
+// Connect WebSocket server to sync routes for notifications
+setWebSocketServer(wsServer);
+
+// Make WebSocket server available to routes
+export { wsServer };
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {

@@ -5,6 +5,17 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
+// WebSocket server instance - will be set by index.ts
+let wsServer: any = null;
+
+/**
+ * Set WebSocket server instance for sending notifications
+ */
+export function setWebSocketServer(ws: any) {
+  wsServer = ws;
+  console.log('✅ WebSocket server connected to sync routes');
+}
+
 // All routes require authentication
 router.use(authenticateToken);
 
@@ -367,6 +378,16 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
       }
       
       await client.query('COMMIT');
+      
+      // Notify other connected devices via WebSocket to trigger immediate sync
+      if (applied.length > 0 && wsServer) {
+        const firstChange = changes[0];
+        wsServer.notifySyncAvailable(userId, firstChange.deviceId, {
+          changesCount: applied.length,
+          hasNotes: applied.some((a: any) => a.entityType === 'note'),
+          hasAttachments: applied.some((a: any) => a.entityType === 'attachment'),
+        });
+      }
       
       res.json({
         applied: applied.length,
