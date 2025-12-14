@@ -87,151 +87,6 @@ Cliente A (Web)                  Servidor                    Cliente B (VS Code)
 
 ---
 
-## 📎 Sincronización de Archivos Adjuntos
-
-**SÍ, el sistema HTTP REST sincroniza archivos adjuntos e imágenes**, pero funciona en dos pasos:
-
-### Flujo de Sincronización de Attachments
-
-1. **Subir archivo** (Cliente A):
-   ```typescript
-   // POST /api/attachments/upload
-   const formData = new FormData();
-   formData.append('file', file);
-   formData.append('noteUuid', noteUuid);
-   
-   const response = await fetch('/api/attachments/upload', {
-     method: 'POST',
-     headers: { 'Authorization': `Bearer ${token}` },
-     body: formData
-   });
-   
-   const { attachment } = await response.json();
-   // attachment contiene: { id, noteUuid, fileName, fileHash, fileSize, mimeType }
-   ```
-
-2. **Sincronizar metadata** (automático en `/api/sync/changes`):
-   - El endpoint `/api/sync/changes` devuelve metadata de attachments
-   - Cliente B recibe: `{ entityType: 'attachment', operation: 'create', dataJson: {...} }`
-
-3. **Descargar archivo** (Cliente B):
-   ```typescript
-   // GET /api/sync/attachment/:id/download
-   const response = await fetch(`/api/sync/attachment/${attachmentId}/download`, {
-     headers: { 'Authorization': `Bearer ${token}` }
-   });
-   
-   const blob = await response.blob();
-   // Guardar archivo localmente
-   ```
-
-### Ejemplo Completo
-
-```typescript
-async function applyChange(change: Change) {
-  if (change.entityType === 'note') {
-    await saveNoteLocally(change.dataJson);
-  } 
-  else if (change.entityType === 'attachment') {
-    if (change.operation === 'create') {
-      // 1. Guardar metadata
-      await saveAttachmentMetadata(change.dataJson);
-      
-      // 2. Descargar archivo real
-      const response = await fetch(
-        `/api/sync/attachment/${change.dataJson.id}/download`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
-      
-      const blob = await response.blob();
-      
-      // 3. Guardar archivo localmente
-      await saveAttachmentFile(change.dataJson.id, blob);
-      
-      console.log(`📎 Downloaded attachment: ${change.dataJson.fileName}`);
-    }
-    else if (change.operation === 'delete') {
-      await deleteAttachmentLocally(change.dataJson.id);
-    }
-  }
-}
-```
-
-### ⚠️ IMPORTANTE: Evitar Loop Infinito
-
-**NO hagas push de cambios que recibiste del servidor en un pull**. Ejemplo de lo que NO hacer:
-
-```typescript
-// ❌ MAL - Causa loop infinito
-async function performSyncPull() {
-  const { changes } = await fetch('/api/sync/changes?since=...').then(r => r.json());
-  
-  for (const change of changes) {
-    await saveNoteLocally(change.dataJson);
-    
-    // ❌ NUNCA HAGAS ESTO: Re-encolar para push
-    await enqueueSyncChange(change); // ¡Loop infinito!
-  }
-}
-```
-
-**Solución correcta:**
-
-```typescript
-// ✅ BIEN - Solo guarda localmente, NO hace push
-async function performSyncPull() {
-  const { changes } = await fetch('/api/sync/changes?since=...').then(r => r.json());
-  
-  for (const change of changes) {
-    // Solo guardar localmente, NO encolar para push
-    await saveNoteLocally(change.dataJson);
-    
-    // Actualizar timestamp local para no volver a enviar
-    await updateLocalTimestamp(change.entityId, change.timestamp);
-  }
-}
-
-// ✅ Solo hacer push de cambios originados localmente
-async function onNoteChangedByUser(note: Note) {
-  const change = {
-    ...note,
-    timestamp: Date.now(), // Timestamp NUEVO
-    deviceId: getDeviceId(),
-    synced: false,
-  };
-  
-  await enqueueSyncChange(change);
-  await performSyncPush([change]);
-}
-```
-
-### Verificar timestamps antes de enviar
-
-```typescript
-async function getPendingChanges(): Promise<Change[]> {
-  const allChanges = await getAllLocalChanges();
-  
-  // Filtrar cambios que ya están sincronizados
-  const pending = allChanges.filter(change => {
-    const serverTimestamp = getLastServerTimestamp(change.entityId);
-    
-    // Solo enviar si nuestro timestamp es más reciente
-    return !change.synced && change.timestamp > serverTimestamp;
-  });
-  
-  return pending;
-}
-```
-
-### Importante
-
-- **La metadata se sincroniza automáticamente** vía `/api/sync/changes`
-- **Los archivos se descargan bajo demanda** vía `/api/sync/attachment/:id/download`
-- El servidor verifica permisos y hash del archivo
-- Se hace streaming para archivos grandes
-
----
-
 ## 🛠️ Cambios Requeridos en el Cliente
 
 ### 1. **Eliminar envío de datos por WebSocket**
@@ -330,7 +185,7 @@ async function performSyncPull() {
       
       // Aplicar cambios localmente
       for (const change of changes) {
-        await applyChange(change); // Maneja notas Y attachments
+        await applyChange(change);
       }
       
       // Guardar último timestamp sincronizado
@@ -558,38 +413,6 @@ async function onNoteChanged(note: Note, operation: 'create' | 'update' | 'delet
   // 3. Intentar sincronizar inmediatamente (si hay conexión)
   syncManager.performSyncPush([change]);
 }
-
-// Cuando se sube un attachment
-async function onAttachmentUploaded(file: File, noteUuid: string) {
-  // 1. Subir archivo al servidor
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('noteUuid', noteUuid);
-  
-  const response = await fetch('/api/attachments/upload', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}` },
-    body: formData
-  });
-  
-  const { attachment } = await response.json();
-  
-  // 2. Encolar metadata para sincronización
-  const change: Change = {
-    entityType: 'attachment',
-    entityId: attachment.id,
-    operation: 'create',
-    dataJson: attachment,
-    timestamp: Date.now(),
-    deviceId: getDeviceId(),
-    synced: false,
-  };
-  
-  await enqueueSyncChange(change);
-  
-  // 3. Sincronizar inmediatamente
-  syncManager.performSyncPush([change]);
-}
 ```
 
 ---
@@ -681,8 +504,6 @@ window.addEventListener('offline', () => {
 - [ ] Manejar conflictos correctamente
 - [ ] Implementar sync al conectar/reconectar
 - [ ] Implementar sync al detectar cambio de red
-- [ ] **Implementar descarga de attachments en `applyChange()`**
-- [ ] **Implementar subida de attachments con `POST /api/attachments/upload`**
 - [ ] Testing entre dispositivos
 
 ---

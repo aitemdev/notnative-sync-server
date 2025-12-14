@@ -121,6 +121,8 @@ router.get('/changes', async (req: AuthRequest, res: Response) => {
       console.log(`[Sync] Initial sync including ${attachmentChanges.length} attachments`);
     } else {
       // Regular incremental sync - get changes since timestamp
+      console.log(`[Sync] Incremental sync requested - userId: ${userId}, since: ${since}, deviceId: ${deviceId}`);
+      
       const result = await pool.query(
         `SELECT 
           id, entity_type, entity_id, operation, data_json, timestamp, device_id
@@ -132,6 +134,8 @@ router.get('/changes', async (req: AuthRequest, res: Response) => {
          LIMIT $4`,
         [userId, since, deviceId, limit]
       );
+      
+      console.log(`[Sync] Incremental sync found ${result.rows.length} raw changes in sync_log`);
       
       changes = result.rows.map((row: any) => ({
         id: row.id,
@@ -146,8 +150,11 @@ router.get('/changes', async (req: AuthRequest, res: Response) => {
       // Get full note content for note changes
       const noteChanges = changes.filter((c: any) => c.entityType === 'note' && c.operation !== 'delete');
       
+      console.log(`[Sync] Pull - Found ${changes.length} raw changes, ${noteChanges.length} are note changes needing content enrichment`);
+      
       if (noteChanges.length > 0) {
         const noteUuids = noteChanges.map((c: any) => c.entityId);
+        console.log(`[Sync] Pull - Fetching full content for notes:`, noteUuids);
         const notesResult = await pool.query(
           `SELECT uuid, name, path, folder, content, order_index, icon, icon_color, 
                   created_at, updated_at, deleted_at
@@ -159,9 +166,12 @@ router.get('/changes', async (req: AuthRequest, res: Response) => {
         // Merge note content into changes
         const notesMap = new Map(notesResult.rows.map((n: any) => [n.uuid, n]));
         
+        console.log(`[Sync] Pull - Fetched ${notesResult.rows.length} notes from DB`);
+        
         for (const change of noteChanges) {
           const note = notesMap.get(change.entityId) as any;
           if (note) {
+            console.log(`[Sync] Pull - Enriching note ${change.entityId} with content (${note.content?.length || 0} bytes)`);
             change.dataJson = {
               ...change.dataJson,
               uuid: note.uuid,
@@ -256,13 +266,7 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
             if (existingNote.rows.length > 0) {
               const serverUpdatedAt = parseInt(existingNote.rows[0].updated_at);
               
-              // Skip if timestamps are equal (already synced)
-              if (serverUpdatedAt === timestamp) {
-                console.log(`[SYNC] Skipping note ${entityId} - already up to date (ts: ${timestamp})`);
-                continue;
-              }
-              
-              // Conflict if server version is newer
+              // Conflict if server version is newer and different device
               if (serverUpdatedAt > timestamp) {
                 conflicts.push({
                   entityType,
@@ -275,7 +279,10 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
               }
             }
             
-            console.log(`[SYNC] Updating note ${entityId} from device ${deviceId} (ts: ${timestamp})`);
+            // Debug log: verificar contenido recibido
+            console.log(`[SYNC] Updating note ${entityId}`);
+            console.log(`[SYNC] Content length: ${dataJson.content?.length || 0}`);
+            console.log(`[SYNC] Last 50 chars: "${dataJson.content?.slice(-50) || ''}"`);
             
             // Upsert note
             await client.query(
