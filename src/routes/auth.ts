@@ -80,6 +80,12 @@ router.post('/register', async (req: Request, res: Response) => {
     const accessToken = generateAccessToken(user.id, deviceDbId);
     const refreshToken = generateRefreshToken(user.id, deviceDbId);
     
+    // Delete old refresh tokens for this device
+    await pool.query(
+      'DELETE FROM refresh_tokens WHERE user_id = $1 AND device_id = $2',
+      [user.id, deviceDbId]
+    );
+    
     // Store refresh token
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
     await pool.query(
@@ -145,6 +151,12 @@ router.post('/login', async (req: Request, res: Response) => {
     // Generate tokens
     const accessToken = generateAccessToken(user.id, deviceDbId);
     const refreshToken = generateRefreshToken(user.id, deviceDbId);
+    
+    // Delete old refresh tokens for this device
+    await pool.query(
+      'DELETE FROM refresh_tokens WHERE user_id = $1 AND device_id = $2',
+      [user.id, deviceDbId]
+    );
     
     // Store refresh token
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days

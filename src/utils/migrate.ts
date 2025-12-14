@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS folders (
   order_index INTEGER DEFAULT 0,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
+  deleted_at BIGINT,
   UNIQUE(user_id, path)
 );
 
@@ -118,7 +119,9 @@ CREATE TABLE IF NOT EXISTS attachments (
   file_size BIGINT NOT NULL,
   mime_type VARCHAR(100),
   s3_key VARCHAR(500) UNIQUE NOT NULL,
-  created_at BIGINT NOT NULL
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  deleted_at BIGINT
 );
 
 CREATE INDEX IF NOT EXISTS idx_attachments_user ON attachments(user_id);
