@@ -246,6 +246,9 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
     const conflicts: any[] = [];
     const applied: any[] = [];
     
+    // Use server timestamp for sync_log to avoid race conditions
+    const serverTimestamp = Date.now();
+    
     const client = await pool.connect();
     
     try {
@@ -321,12 +324,12 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
             );
           }
           
-          // Log sync
+          // Log sync (use server timestamp to avoid race conditions)
           await client.query(
             `INSERT INTO sync_log 
               (user_id, device_id, entity_type, entity_id, operation, data_json, timestamp)
              VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [userId, deviceId, entityType, entityId, operation, dataJson, timestamp]
+            [userId, deviceId, entityType, entityId, operation, dataJson, serverTimestamp]
           );
           
           applied.push({ entityType, entityId, operation });
@@ -342,12 +345,12 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
             );
             
             if (existingAttachment.rows.length > 0) {
-              // Log sync
+              // Log sync (use server timestamp to avoid race conditions)
               await client.query(
                 `INSERT INTO sync_log 
                   (user_id, device_id, entity_type, entity_id, operation, data_json, timestamp)
                  VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-                [userId, deviceId, entityType, entityId, operation, dataJson, timestamp]
+                [userId, deviceId, entityType, entityId, operation, dataJson, serverTimestamp]
               );
               
               applied.push({ entityType, entityId, operation });
@@ -372,12 +375,12 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
               );
             }
             
-            // Log sync
+            // Log sync (use server timestamp to avoid race conditions)
             await client.query(
               `INSERT INTO sync_log 
                 (user_id, device_id, entity_type, entity_id, operation, data_json, timestamp)
                VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-              [userId, deviceId, entityType, entityId, operation, dataJson, timestamp]
+              [userId, deviceId, entityType, entityId, operation, dataJson, serverTimestamp]
             );
             
             applied.push({ entityType, entityId, operation });
