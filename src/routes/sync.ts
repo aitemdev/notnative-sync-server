@@ -171,21 +171,27 @@ router.get('/changes', async (req: AuthRequest, res: Response) => {
         for (const change of noteChanges) {
           const note = notesMap.get(change.entityId) as any;
           if (note) {
-            console.log(`[Sync] Pull - Enriching note ${change.entityId} with content (${note.content?.length || 0} bytes)`);
-            change.dataJson = {
-              ...change.dataJson,
-              uuid: note.uuid,
-              name: note.name,
-              path: note.path,
-              folder: note.folder,
-              content: note.content,
-              orderIndex: note.order_index,
-              icon: note.icon,
-              iconColor: note.icon_color,
-              createdAt: parseInt(note.created_at),
-              updatedAt: parseInt(note.updated_at),
-              deletedAt: note.deleted_at ? parseInt(note.deleted_at) : null,
-            };
+            // Only enrich if content is missing (e.g., from SQL triggers)
+            // Don't overwrite content that was explicitly stored in sync_log
+            if (!change.dataJson.content) {
+              console.log(`[Sync] Pull - Enriching note ${change.entityId} with current content (${note.content?.length || 0} bytes)`);
+              change.dataJson = {
+                ...change.dataJson,
+                uuid: note.uuid,
+                name: note.name,
+                path: note.path,
+                folder: note.folder,
+                content: note.content,
+                orderIndex: note.order_index,
+                icon: note.icon,
+                iconColor: note.icon_color,
+                createdAt: parseInt(note.created_at),
+                updatedAt: parseInt(note.updated_at),
+                deletedAt: note.deleted_at ? parseInt(note.deleted_at) : null,
+              };
+            } else {
+              console.log(`[Sync] Pull - Note ${change.entityId} already has content in sync_log (${change.dataJson.content?.length || 0} bytes), not enriching`);
+            }
           }
         }
       }
@@ -325,6 +331,7 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
           }
           
           // Log sync (use server timestamp to avoid race conditions)
+          console.log(`[SYNC] Storing in sync_log - entity: ${entityId}, content length: ${dataJson.content?.length || 0}, preview: "${dataJson.content?.slice(0, 50) || 'N/A'}"`);
           await client.query(
             `INSERT INTO sync_log 
               (user_id, device_id, entity_type, entity_id, operation, data_json, timestamp)
