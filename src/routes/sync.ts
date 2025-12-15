@@ -143,6 +143,10 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
              updated_at = EXCLUDED.updated_at,
              deleted_at = EXCLUDED.deleted_at`,
           [userId, note.uuid, note.name, note.path, note.folder, safeContent, note.order_index, note.icon, note.icon_color, createdAt, updatedAt, note.deleted_at]
+        );
+      }
+    }
+
     // Upsert Folders
     if (folders) {
       for (const folder of folders) {
@@ -162,10 +166,6 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
              updated_at = EXCLUDED.updated_at,
              deleted_at = EXCLUDED.deleted_at`,
           [userId, folder.path, folder.icon, folder.color, folder.icon_color, folder.order_index, createdAt, updatedAt, folder.deleted_at]
-        );
-      }
-    }        deleted_at = EXCLUDED.deleted_at`,
-          [userId, folder.path, folder.icon, folder.color, folder.icon_color, folder.order_index, folder.created_at, folder.updated_at, folder.deleted_at]
         );
       }
     }
