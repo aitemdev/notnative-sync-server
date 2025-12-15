@@ -10,6 +10,7 @@
     "migrate": "tsx src/utils/migrate.ts",
     "migrate:add-deleted-at": "tsx src/utils/add-deleted-at.ts",
     "migrate:fix-null-content": "tsx src/utils/fix-null-content.ts",
+    "clean-sync": "tsx src/utils/clean-sync.ts",
     "cleanup": "tsx src/utils/cleanup-orphans.ts"
   },
   "keywords": [

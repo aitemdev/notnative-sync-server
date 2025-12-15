@@ -24,8 +24,8 @@ const NoteSchema = z.object({
   order_index: z.number().optional(),
   icon: z.string().nullable().optional(),
   icon_color: z.string().nullable().optional(),
-  created_at: z.number(),
-  updated_at: z.number(),
+  created_at: z.number().optional(),
+  updated_at: z.number().optional(),
   deleted_at: z.number().nullable().optional(),
 });
 
@@ -35,8 +35,8 @@ const FolderSchema = z.object({
   color: z.string().nullable().optional(),
   icon_color: z.string().nullable().optional(),
   order_index: z.number().optional(),
-  created_at: z.number(),
-  updated_at: z.number(),
+  created_at: z.number().optional(),
+  updated_at: z.number().optional(),
   deleted_at: z.number().nullable().optional(),
 });
 
@@ -124,6 +124,10 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
       for (const note of notes) {
         // Ensure content is never null - use empty string if undefined/null
         const safeContent = note.content !== null && note.content !== undefined ? note.content : '';
+        // Use current timestamp if created_at or updated_at are not provided
+        const now = Date.now();
+        const createdAt = note.created_at || now;
+        const updatedAt = note.updated_at || now;
         
         await client.query(
           `INSERT INTO notes (user_id, uuid, name, path, folder, content, order_index, icon, icon_color, created_at, updated_at, deleted_at)
@@ -138,14 +142,15 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
              icon_color = EXCLUDED.icon_color,
              updated_at = EXCLUDED.updated_at,
              deleted_at = EXCLUDED.deleted_at`,
-          [userId, note.uuid, note.name, note.path, note.folder, safeContent, note.order_index, note.icon, note.icon_color, note.created_at, note.updated_at, note.deleted_at]
-        );
-      }
-    }
-
+          [userId, note.uuid, note.name, note.path, note.folder, safeContent, note.order_index, note.icon, note.icon_color, createdAt, updatedAt, note.deleted_at]
     // Upsert Folders
     if (folders) {
       for (const folder of folders) {
+        // Use current timestamp if created_at or updated_at are not provided
+        const now = Date.now();
+        const createdAt = folder.created_at || now;
+        const updatedAt = folder.updated_at || now;
+        
         await client.query(
           `INSERT INTO folders (user_id, path, icon, color, icon_color, order_index, created_at, updated_at, deleted_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -156,6 +161,10 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
              order_index = EXCLUDED.order_index,
              updated_at = EXCLUDED.updated_at,
              deleted_at = EXCLUDED.deleted_at`,
+          [userId, folder.path, folder.icon, folder.color, folder.icon_color, folder.order_index, createdAt, updatedAt, folder.deleted_at]
+        );
+      }
+    }        deleted_at = EXCLUDED.deleted_at`,
           [userId, folder.path, folder.icon, folder.color, folder.icon_color, folder.order_index, folder.created_at, folder.updated_at, folder.deleted_at]
         );
       }
