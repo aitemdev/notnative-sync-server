@@ -55,7 +55,6 @@ CREATE TABLE IF NOT EXISTS notes (
   path TEXT NOT NULL,
   folder VARCHAR(500),
   content TEXT,
-  content_hash VARCHAR(64),
   order_index INTEGER DEFAULT 0,
   icon VARCHAR(50),
   icon_color VARCHAR(50),
@@ -70,7 +69,6 @@ CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id);
 CREATE INDEX IF NOT EXISTS idx_notes_uuid ON notes(uuid);
 CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(user_id, folder);
-CREATE INDEX IF NOT EXISTS idx_notes_content_hash ON notes(content_hash);
 
 -- Tags table
 CREATE TABLE IF NOT EXISTS tags (
@@ -153,6 +151,24 @@ async function migrate() {
     console.log('🔄 Running database migrations...');
     
     await pool.query(SCHEMA);
+    
+    // Migración adicional: Añadir content_hash a notas existentes si no existe
+    console.log('🔄 Checking for content_hash column...');
+    const checkColumn = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'notes' 
+      AND column_name = 'content_hash'
+    `);
+    
+    if (checkColumn.rows.length === 0) {
+      console.log('📝 Adding content_hash column to notes table...');
+      await pool.query(`ALTER TABLE notes ADD COLUMN content_hash VARCHAR(64)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_notes_content_hash ON notes(content_hash)`);
+      console.log('✅ content_hash column added successfully');
+    } else {
+      console.log('✅ content_hash column already exists');
+    }
     
     console.log('✅ Database migrations completed successfully');
     process.exit(0);
