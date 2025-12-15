@@ -1,5 +1,7 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
+import { promises as fs } from 'fs';
+import path from 'path';
 import pool from '../utils/db';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 
@@ -76,6 +78,10 @@ router.post('/pull', async (req: AuthRequest, res: Response) => {
       created_at: Number(row.created_at),
       updated_at: Number(row.updated_at),
       deleted_at: row.deleted_at ? Number(row.deleted_at) : null,
+      // Ensure content is never undefined - use empty string if null
+      content: row.content !== null && row.content !== undefined ? row.content : '',
+      // Ensure path is never null - construct from name if missing
+      path: row.path || `${row.folder ? row.folder + '/' : ''}${row.name}.md`
     }));
 
     const folders = foldersResult.rows.map(row => ({
@@ -84,6 +90,13 @@ router.post('/pull', async (req: AuthRequest, res: Response) => {
       updated_at: Number(row.updated_at),
       deleted_at: row.deleted_at ? Number(row.deleted_at) : null,
     }));
+    
+    // Log notes with missing content for debugging
+    const notesWithoutContent = notes.filter(n => !n.content && !n.deleted_at);
+    if (notesWithoutContent.length > 0) {
+      console.warn(`⚠️ Found ${notesWithoutContent.length} notes without content:`, 
+        notesWithoutContent.map(n => `${n.name} (${n.uuid})`));
+    }
 
     res.json({
       notes,
