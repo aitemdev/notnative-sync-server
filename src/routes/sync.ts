@@ -122,6 +122,9 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
     // Upsert Notes
     if (notes) {
       for (const note of notes) {
+        // Ensure content is never null - use empty string if undefined/null
+        const safeContent = note.content !== null && note.content !== undefined ? note.content : '';
+        
         await client.query(
           `INSERT INTO notes (user_id, uuid, name, path, folder, content, order_index, icon, icon_color, created_at, updated_at, deleted_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
@@ -135,7 +138,7 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
              icon_color = EXCLUDED.icon_color,
              updated_at = EXCLUDED.updated_at,
              deleted_at = EXCLUDED.deleted_at`,
-          [userId, note.uuid, note.name, note.path, note.folder, note.content, note.order_index, note.icon, note.icon_color, note.created_at, note.updated_at, note.deleted_at]
+          [userId, note.uuid, note.name, note.path, note.folder, safeContent, note.order_index, note.icon, note.icon_color, note.created_at, note.updated_at, note.deleted_at]
         );
       }
     }

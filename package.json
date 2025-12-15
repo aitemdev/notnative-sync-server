@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "migrate": "tsx src/utils/migrate.ts",
     "migrate:add-deleted-at": "tsx src/utils/add-deleted-at.ts",
+    "migrate:fix-null-content": "tsx src/utils/fix-null-content.ts",
     "cleanup": "tsx src/utils/cleanup-orphans.ts"
   },
   "keywords": [
