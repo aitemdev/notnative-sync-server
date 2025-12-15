@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS notes (
   path TEXT NOT NULL,
   folder VARCHAR(500),
   content TEXT,
+  content_hash VARCHAR(64),
   order_index INTEGER DEFAULT 0,
   icon VARCHAR(50),
   icon_color VARCHAR(50),
@@ -69,6 +70,7 @@ CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id);
 CREATE INDEX IF NOT EXISTS idx_notes_uuid ON notes(uuid);
 CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(user_id, folder);
+CREATE INDEX IF NOT EXISTS idx_notes_content_hash ON notes(content_hash);
 
 -- Tags table
 CREATE TABLE IF NOT EXISTS tags (
