@@ -77,10 +77,11 @@ router.post('/upload', upload.single('file'), async (req: AuthRequest, res: Resp
 
     if (existingFile.rows.length > 0) {
       // Archivo ya existe, crear nueva entrada apuntando al mismo archivo
+      const now = Date.now();
       const result = await client.query(
         `INSERT INTO attachments 
-          (user_id, note_uuid, file_name, file_hash, file_size, mime_type, s3_key, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          (user_id, note_uuid, file_name, file_hash, file_size, mime_type, s3_key, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING id, file_hash, s3_key`,
         [
           userId,
@@ -90,7 +91,8 @@ router.post('/upload', upload.single('file'), async (req: AuthRequest, res: Resp
           fileSize,
           mimeType,
           existingFile.rows[0].s3_key, // Reutilizar la misma storage key
-          Date.now(),
+          now,
+          now,
         ]
       );
       attachmentId = result.rows[0].id;
@@ -99,12 +101,13 @@ router.post('/upload', upload.single('file'), async (req: AuthRequest, res: Resp
       await saveFile(fileBuffer, storageKey);
 
       // Insertar en base de datos
+      const now = Date.now();
       const result = await client.query(
         `INSERT INTO attachments 
-          (user_id, note_uuid, file_name, file_hash, file_size, mime_type, s3_key, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          (user_id, note_uuid, file_name, file_hash, file_size, mime_type, s3_key, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING id, file_hash, s3_key`,
-        [userId, noteUuid, fileName, fileHash, fileSize, mimeType, storageKey, Date.now()]
+        [userId, noteUuid, fileName, fileHash, fileSize, mimeType, storageKey, now, now]
       );
       attachmentId = result.rows[0].id;
     }
