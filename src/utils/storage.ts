@@ -36,6 +36,18 @@ const ALLOWED_MIME_TYPES = [
   // Otros Office
   'application/vnd.ms-powerpoint', // .ppt
   'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
+  
+  // Genérico (se validará por extensión)
+  'application/octet-stream',
+];
+
+// Extensiones permitidas (para cuando MIME type es genérico)
+const ALLOWED_EXTENSIONS = [
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.tiff',
+  '.pdf',
+  '.xls', '.xlsx',
+  '.doc', '.docx',
+  '.ppt', '.pptx',
 ];
 
 /**
@@ -43,6 +55,14 @@ const ALLOWED_MIME_TYPES = [
  */
 export function isAllowedMimeType(mimeType: string): boolean {
   return ALLOWED_MIME_TYPES.includes(mimeType);
+}
+
+/**
+ * Valida si la extensión del archivo está permitida
+ */
+export function isAllowedExtension(filename: string): boolean {
+  const ext = filename.toLowerCase().substring(filename.lastIndexOf('.'));
+  return ALLOWED_EXTENSIONS.includes(ext);
 }
 
 /**
