@@ -170,6 +170,43 @@ async function migrate() {
       console.log('✅ content_hash column already exists');
     }
     
+    // Migración adicional: Añadir updated_at y deleted_at a attachments si no existen
+    console.log('🔄 Checking for updated_at column in attachments...');
+    const checkUpdatedAt = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'attachments' 
+      AND column_name = 'updated_at'
+    `);
+    
+    if (checkUpdatedAt.rows.length === 0) {
+      console.log('📝 Adding updated_at column to attachments table...');
+      await pool.query(`ALTER TABLE attachments ADD COLUMN updated_at BIGINT`);
+      // Inicializar con created_at para registros existentes
+      await pool.query(`UPDATE attachments SET updated_at = created_at WHERE updated_at IS NULL`);
+      // Hacer NOT NULL después de poblar
+      await pool.query(`ALTER TABLE attachments ALTER COLUMN updated_at SET NOT NULL`);
+      console.log('✅ updated_at column added successfully');
+    } else {
+      console.log('✅ updated_at column already exists');
+    }
+    
+    console.log('🔄 Checking for deleted_at column in attachments...');
+    const checkDeletedAt = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'attachments' 
+      AND column_name = 'deleted_at'
+    `);
+    
+    if (checkDeletedAt.rows.length === 0) {
+      console.log('📝 Adding deleted_at column to attachments table...');
+      await pool.query(`ALTER TABLE attachments ADD COLUMN deleted_at BIGINT`);
+      console.log('✅ deleted_at column added successfully');
+    } else {
+      console.log('✅ deleted_at column already exists');
+    }
+    
     console.log('✅ Database migrations completed successfully');
     process.exit(0);
   } catch (error) {
