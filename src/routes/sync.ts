@@ -187,4 +187,53 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// ATTACHMENTS PULL
+const AttachmentsPullSchema = z.object({
+  noteUuids: z.array(z.string()),
+  lastSyncTimestamp: z.number(),
+});
+
+router.post('/attachments/pull', async (req: AuthRequest, res: Response) => {
+  try {
+    const { noteUuids, lastSyncTimestamp } = AttachmentsPullSchema.parse(req.body);
+    const userId = req.userId!;
+
+    if (noteUuids.length === 0) {
+      return res.json({ attachments: [], timestamp: Date.now() });
+    }
+
+    // Get attachments for the specified notes that were updated/deleted after lastSyncTimestamp
+    const attachmentsResult = await pool.query(
+      `SELECT id, note_uuid, file_name, file_hash, file_size, mime_type, created_at, updated_at, deleted_at
+       FROM attachments 
+       WHERE user_id = $1 
+       AND note_uuid = ANY($2)
+       AND (updated_at > $3 OR deleted_at > $3)`,
+      [userId, noteUuids, lastSyncTimestamp]
+    );
+
+    // Convert BigInt to Number for JSON
+    const attachments = attachmentsResult.rows.map(row => ({
+      id: row.id,
+      note_uuid: row.note_uuid,
+      file_name: row.file_name,
+      file_hash: row.file_hash,
+      file_size: Number(row.file_size),
+      mime_type: row.mime_type,
+      created_at: Number(row.created_at),
+      updated_at: Number(row.updated_at),
+      deleted_at: row.deleted_at ? Number(row.deleted_at) : null,
+    }));
+
+    res.json({
+      attachments,
+      timestamp: Date.now(),
+    });
+
+  } catch (error) {
+    console.error('Attachments pull error:', error);
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 export default router;

@@ -70,27 +70,27 @@ CREATE INDEX IF NOT EXISTS idx_notes_uuid ON notes(uuid);
 CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(user_id, folder);
 
--- Tags table
-CREATE TABLE IF NOT EXISTS tags (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  name VARCHAR(255) NOT NULL,
-  color VARCHAR(50),
-  usage_count INTEGER DEFAULT 0,
-  UNIQUE(user_id, name)
-);
-
-CREATE INDEX IF NOT EXISTS idx_tags_user ON tags(user_id);
-
--- Note-Tags relationship
-CREATE TABLE IF NOT EXISTS note_tags (
-  note_uuid VARCHAR(36) NOT NULL,
-  tag_id UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-  PRIMARY KEY (note_uuid, tag_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_note_tags_note ON note_tags(note_uuid);
-CREATE INDEX IF NOT EXISTS idx_note_tags_tag ON note_tags(tag_id);
+-- Tags table (DEPRECATED - Tags are now extracted locally from note content)
+-- CREATE TABLE IF NOT EXISTS tags (
+--   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+--   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+--   name VARCHAR(255) NOT NULL,
+--   color VARCHAR(50),
+--   usage_count INTEGER DEFAULT 0,
+--   UNIQUE(user_id, name)
+-- );
+-- 
+-- CREATE INDEX IF NOT EXISTS idx_tags_user ON tags(user_id);
+-- 
+-- -- Note-Tags relationship
+-- CREATE TABLE IF NOT EXISTS note_tags (
+--   note_uuid VARCHAR(36) NOT NULL,
+--   tag_id UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+--   PRIMARY KEY (note_uuid, tag_id)
+-- );
+-- 
+-- CREATE INDEX IF NOT EXISTS idx_note_tags_note ON note_tags(note_uuid);
+-- CREATE INDEX IF NOT EXISTS idx_note_tags_tag ON note_tags(tag_id);
 
 -- Folders table
 CREATE TABLE IF NOT EXISTS folders (
