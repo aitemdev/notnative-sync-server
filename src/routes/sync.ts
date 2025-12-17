@@ -60,12 +60,14 @@ router.post('/pull', async (req: AuthRequest, res: Response) => {
     // Get changed notes
     // Return: modified non-deleted notes OR recently deleted notes
     // This prevents old deleted notes from being restored on fresh sync
+    // OPTIMIZATION: If lastSyncTimestamp is 0 (fresh sync), DO NOT send deleted notes
+    // The client has no notes, so it doesn't need to delete anything.
     const notesResult = await pool.query(
       `SELECT * FROM notes 
        WHERE user_id = $1 
        AND (
          (updated_at > $2 AND deleted_at IS NULL)
-         OR deleted_at > $2
+         OR (deleted_at > $2 AND $2 > 0)
        )`,
       [userId, lastSyncTimestamp]
     );

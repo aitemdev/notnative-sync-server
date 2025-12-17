@@ -17,8 +17,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       `SELECT uuid, name, path, folder, order_index, icon, icon_color, 
               created_at, updated_at, deleted_at
        FROM notes
-       WHERE user_id = $1
-       ORDER BY updated_at DESC`,
+       WHERE user_id = $1 AND deleted_at IS NULL       ORDER BY updated_at DESC`,
       [userId]
     );
     
