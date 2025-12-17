@@ -9,7 +9,6 @@ import {
   deleteFile,
   getAbsoluteFilePath,
   isAllowedMimeType,
-  isAllowedExtension,
   checkStorageQuota,
   updateUserStorage,
 } from '../utils/storage';
@@ -25,21 +24,10 @@ const upload = multer({
     fileSize: parseInt(process.env.MAX_FILE_SIZE || '10485760'), // 10MB por defecto
   },
   fileFilter: (req, file, cb) => {
-    // Validar por MIME type
     if (!isAllowedMimeType(file.mimetype)) {
-      // Si el MIME type es genérico, validar por extensión
-      if (file.mimetype === 'application/octet-stream') {
-        if (!isAllowedExtension(file.originalname)) {
-          return cb(new Error(`File extension not allowed: ${file.originalname}`));
-        }
-        // Extensión válida, permitir el archivo
-        cb(null, true);
-      } else {
-        return cb(new Error(`File type not allowed: ${file.mimetype}`));
-      }
-    } else {
-      cb(null, true);
+      return cb(new Error(`File type not allowed: ${file.mimetype}`));
     }
+    cb(null, true);
   },
 });
 

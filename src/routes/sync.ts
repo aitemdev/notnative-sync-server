@@ -127,11 +127,18 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
 
     // Upsert Notes
     if (notes) {
+      const serverTime = Date.now();
       for (const note of notes) {
         // Normalize path and folder to forward slashes for cross-platform consistency
         const normalizedPath = note.path ? note.path.replace(/\\/g, '/') : note.path;
         const normalizedFolder = note.folder ? note.folder.replace(/\\/g, '/') : note.folder;
         
+        // CRITICAL FIX: Use server time for updated_at to ensure consistency across devices.
+        // If we rely on client time, a device with a lagging clock (e.g. 1 hour behind) 
+        // will save updates that are invisible to other devices that have already synced past that time.
+        // We keep the client's created_at as it is historical data.
+        const safeUpdatedAt = serverTime;
+
         await client.query(
           `INSERT INTO notes (user_id, uuid, name, path, folder, content, content_hash, order_index, icon, icon_color, created_at, updated_at, deleted_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
@@ -145,15 +152,18 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
              icon = EXCLUDED.icon,
              icon_color = EXCLUDED.icon_color,
              updated_at = EXCLUDED.updated_at,
-             deleted_at = EXCLUDED.deleted_at`,
-          [userId, note.uuid, note.name, normalizedPath, normalizedFolder, note.content, note.content_hash, note.order_index, note.icon, note.icon_color, note.created_at, note.updated_at, note.deleted_at]
+             deleted_at = EXCLUDED.deleted_at
+           WHERE EXCLUDED.updated_at > notes.updated_at`,
+          [userId, note.uuid, note.name, normalizedPath, normalizedFolder, note.content, note.content_hash, note.order_index, note.icon, note.icon_color, note.created_at, safeUpdatedAt, note.deleted_at ? safeUpdatedAt : null]
         );
       }
     }
 
     // Upsert Folders
     if (folders) {
+      const serverTime = Date.now();
       for (const folder of folders) {
+        const safeUpdatedAt = serverTime;
         await client.query(
           `INSERT INTO folders (user_id, path, icon, color, icon_color, order_index, created_at, updated_at, deleted_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -164,7 +174,7 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
              order_index = EXCLUDED.order_index,
              updated_at = EXCLUDED.updated_at,
              deleted_at = EXCLUDED.deleted_at`,
-          [userId, folder.path, folder.icon, folder.color, folder.icon_color, folder.order_index, folder.created_at, folder.updated_at, folder.deleted_at]
+          [userId, folder.path, folder.icon, folder.color, folder.icon_color, folder.order_index, folder.created_at, safeUpdatedAt, folder.deleted_at ? safeUpdatedAt : null]
         );
       }
     }
