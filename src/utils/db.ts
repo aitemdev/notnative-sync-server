@@ -19,6 +19,15 @@ pool.on('connect', () => {
   console.log('✅ Connected to PostgreSQL database');
 });
 
+// Log connection config (debug)
+console.log('🔌 Database Config:', {
+  host: process.env.DB_HOST || 'localhost',
+  port: process.env.DB_PORT || '5432',
+  database: process.env.DB_NAME || 'notnative_sync',
+  user: process.env.DB_USER || 'postgres (default)',
+  // Don't log password
+});
+
 pool.on('error', (err) => {
   console.error('❌ Unexpected database error:', err);
   process.exit(-1);
