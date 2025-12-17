@@ -6,7 +6,7 @@ services:
     container_name: notnative-postgres
     environment:
       POSTGRES_DB: notnative_sync
-      POSTGRES_USER: notnative_user
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${DB_PASSWORD:-change_this_password}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -28,7 +28,7 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: notnative_sync
-      DB_USER: notnative_user
+      DB_USER: postgres
       DB_PASSWORD: ${DB_PASSWORD:-change_this_password}
       JWT_SECRET: ${JWT_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
