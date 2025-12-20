@@ -37,6 +37,26 @@ else
     echo -e "${GREEN}Node.js $NODE_VERSION is installed${NC}"
 fi
 
+# Check if Python is installed
+echo -e "${YELLOW}Checking Python...${NC}"
+if ! command -v python3 &> /dev/null; then
+    echo -e "${RED}Python 3 not found. Installing...${NC}"
+    sudo apt update
+    sudo apt install -y python3 python3-pip python3-venv
+else
+    echo -e "${GREEN}Python 3 is already installed${NC}"
+fi
+
+# Install Python libraries
+echo -e "${YELLOW}Installing Python libraries (matplotlib, pandas, numpy, pillow)...${NC}"
+# Create a virtual environment if it doesn't exist
+if [ ! -d "venv" ]; then
+    python3 -m venv venv
+fi
+source venv/bin/activate
+pip install matplotlib pandas numpy pillow
+deactivate
+
 # Check if PM2 is installed
 echo -e "${YELLOW}Checking PM2...${NC}"
 if ! command -v pm2 &> /dev/null; then

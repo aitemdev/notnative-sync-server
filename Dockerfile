@@ -2,6 +2,15 @@ FROM node:18-alpine
 
 WORKDIR /app
 
+# Install Python and dependencies for data science/plotting
+RUN apk add --no-cache python3 py3-pip \
+    && python3 -m venv /app/venv \
+    && . /app/venv/bin/activate \
+    && pip install --no-cache-dir matplotlib pandas numpy pillow
+
+# Add venv to PATH
+ENV PATH="/app/venv/bin:$PATH"
+
 # Copiar package files
 COPY package*.json ./
 
