@@ -3,13 +3,14 @@ FROM node:18-alpine
 WORKDIR /app
 
 # Install Python and dependencies for data science/plotting
-RUN apk add --no-cache python3 py3-pip \
-    && python3 -m venv /app/venv \
-    && . /app/venv/bin/activate \
-    && pip install --no-cache-dir matplotlib pandas numpy pillow
-
-# Add venv to PATH
-ENV PATH="/app/venv/bin:$PATH"
+# Using APK packages is much faster and more reliable on Alpine than compiling via pip
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    py3-numpy \
+    py3-pandas \
+    py3-matplotlib \
+    py3-pillow
 
 # Copiar package files
 COPY package*.json ./
