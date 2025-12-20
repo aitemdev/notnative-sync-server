@@ -11,11 +11,13 @@ export function authenticateToken(req: AuthRequest, res: Response, next: NextFun
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
   if (!token) {
+    console.warn('[Auth] No token provided');
     return res.status(401).json({ error: 'Access token required' });
   }
 
   const secret = process.env.JWT_SECRET;
   if (!secret) {
+    console.error('[Auth] JWT secret not configured');
     return res.status(500).json({ error: 'JWT secret not configured' });
   }
 
@@ -25,6 +27,7 @@ export function authenticateToken(req: AuthRequest, res: Response, next: NextFun
     req.deviceId = decoded.deviceId;
     next();
   } catch (error) {
+    console.warn('[Auth] Invalid token:', error);
     return res.status(403).json({ error: 'Invalid or expired token' });
   }
 }
