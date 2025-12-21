@@ -9,6 +9,7 @@ import notesRoutes from './routes/notes';
 import attachmentsRoutes from './routes/attachments';
 import settingsRoutes from './routes/settings';
 import executeRoutes from './routes/execute';
+import aiRoutes from './routes/ai';
 import { WebSocketSyncServer } from './websocket/server';
 
 dotenv.config();
@@ -39,6 +40,7 @@ app.use('/api/notes', notesRoutes);
 app.use('/api/attachments', attachmentsRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/execute', executeRoutes);
+app.use('/api/ai', aiRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
