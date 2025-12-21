@@ -1,5 +1,4 @@
 import { Router, Request, Response } from 'express';
-import { pipeline } from '@xenova/transformers';
 import { z } from 'zod';
 
 const router = Router();
@@ -9,6 +8,9 @@ const speakSchema = z.object({
   text: z.string().min(1),
   language: z.string().default('es'),
 });
+
+// Helper for dynamic import (to load ESM module in CJS environment)
+const dynamicImport = new Function('specifier', 'return import(specifier)');
 
 // TTS Synthesizer Singleton (Map of language -> synthesizer)
 const synthesizers = new Map<string, any>();
@@ -29,6 +31,10 @@ router.post('/speak', async (req: Request, res: Response) => {
 
     if (!synthesizer) {
       console.log(`🚀 Loading TTS model: ${modelId}...`);
+      
+      // Dynamically load pipeline from @xenova/transformers
+      const { pipeline } = await dynamicImport('@xenova/transformers');
+      
       synthesizer = await pipeline('text-to-speech', modelId, {
         quantized: true,
       });
