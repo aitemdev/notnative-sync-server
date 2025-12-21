@@ -1,16 +1,17 @@
-FROM node:18-alpine
+FROM node:18-slim
 
 WORKDIR /app
 
 # Install Python and dependencies for data science/plotting
-# Using APK packages is much faster and more reliable on Alpine than compiling via pip
-RUN apk add --no-cache \
+# Using apt packages is reliable on Debian
+RUN apt-get update && apt-get install -y \
     python3 \
-    py3-pip \
-    py3-numpy \
-    py3-pandas \
-    py3-matplotlib \
-    py3-pillow
+    python3-pip \
+    python3-numpy \
+    python3-pandas \
+    python3-matplotlib \
+    python3-pil \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copiar package files
 COPY package*.json ./
