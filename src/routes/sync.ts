@@ -45,6 +45,7 @@ const PushSchema = z.object({
   notes: z.array(NoteSchema).optional(),
   folders: z.array(FolderSchema).optional(),
   deviceId: z.string(),
+  clientTimestamp: z.number().optional(),
 });
 
 const PullSchema = z.object({
@@ -122,24 +123,44 @@ router.post('/pull', async (req: AuthRequest, res: Response) => {
 router.post('/push', async (req: AuthRequest, res: Response) => {
   const client = await pool.connect();
   try {
-    const { notes, folders, deviceId } = PushSchema.parse(req.body);
+    const { notes, folders, deviceId, clientTimestamp } = PushSchema.parse(req.body);
     const userId = req.userId!;
     
     await client.query('BEGIN');
 
+    // Calculate time offset if client timestamp is provided
+    // offset = serverTime - clientTime
+    // adjustedTime = clientTime + offset
+    const serverTime = Date.now();
+    const timeOffset = clientTimestamp ? serverTime - clientTimestamp : 0;
+    
+    if (clientTimestamp && Math.abs(timeOffset) > 60000) {
+      console.log(`🕒 Clock skew detected: Client ${deviceId} is off by ${timeOffset}ms`);
+    }
+
     // Upsert Notes
     if (notes) {
-      const serverTime = Date.now();
       for (const note of notes) {
         // Normalize path and folder to forward slashes for cross-platform consistency
         const normalizedPath = note.path ? note.path.replace(/\\/g, '/') : note.path;
         const normalizedFolder = note.folder ? note.folder.replace(/\\/g, '/') : note.folder;
         
-        // CRITICAL FIX: Use server time for updated_at to ensure consistency across devices.
-        // If we rely on client time, a device with a lagging clock (e.g. 1 hour behind) 
-        // will save updates that are invisible to other devices that have already synced past that time.
-        // We keep the client's created_at as it is historical data.
-        const safeUpdatedAt = serverTime;
+        // Adjust timestamps using the calculated offset
+        // This normalizes the client's time to the server's timeline
+        let safeUpdatedAt = note.updated_at;
+        let safeCreatedAt = note.created_at;
+        let safeDeletedAt = note.deleted_at;
+        
+        if (clientTimestamp) {
+          safeUpdatedAt = safeUpdatedAt + timeOffset;
+          safeCreatedAt = safeCreatedAt + timeOffset;
+          if (safeDeletedAt) safeDeletedAt = safeDeletedAt + timeOffset;
+        } else {
+          // Fallback logic if clientTimestamp is missing (legacy clients)
+          if (!safeUpdatedAt || safeUpdatedAt > serverTime + 300000) {
+             safeUpdatedAt = serverTime;
+          }
+        }
 
         await client.query(
           `INSERT INTO notes (user_id, uuid, name, path, folder, content, content_hash, order_index, icon, icon_color, created_at, updated_at, deleted_at)
@@ -156,7 +177,7 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
              updated_at = EXCLUDED.updated_at,
              deleted_at = EXCLUDED.deleted_at
            WHERE EXCLUDED.updated_at > notes.updated_at`,
-          [userId, note.uuid, note.name, normalizedPath, normalizedFolder, note.content, note.content_hash, note.order_index, note.icon, note.icon_color, note.created_at, safeUpdatedAt, note.deleted_at ? safeUpdatedAt : null]
+          [userId, note.uuid, note.name, normalizedPath, normalizedFolder, note.content, note.content_hash, note.order_index, note.icon, note.icon_color, safeCreatedAt, safeUpdatedAt, safeDeletedAt]
         );
       }
     }
