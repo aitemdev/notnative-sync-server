@@ -162,6 +162,16 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
           }
         }
 
+        // Handle path collision with different UUID
+        // If a note exists with the same path but different UUID, we rename the old one
+        // to avoid unique constraint violation on (user_id, path).
+        await client.query(
+          `UPDATE notes 
+           SET path = path || '.conflict-' || CAST(EXTRACT(EPOCH FROM NOW()) AS INTEGER)
+           WHERE user_id = $1 AND path = $2 AND uuid != $3`,
+          [userId, normalizedPath, note.uuid]
+        );
+
         await client.query(
           `INSERT INTO notes (user_id, uuid, name, path, folder, content, content_hash, order_index, icon, icon_color, created_at, updated_at, deleted_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
