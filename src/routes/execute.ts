@@ -66,20 +66,30 @@ router.post('/', authenticateToken, async (req, res) => {
       if (stdout) console.log(`[Execute] Stdout: ${stdout.substring(0, 500)}${stdout.length > 500 ? '...' : ''}`);
       if (stderr) console.error(`[Execute] Stderr: ${stderr}`);
 
-      // Check for generated images
-      const images: { name: string; data: string }[] = [];
+      // Check for generated files
+      const generatedFiles: { name: string; data: string; type: 'image' | 'file' }[] = [];
       try {
         const files = await fs.readdir(runDir);
         for (const file of files) {
             if (file === fileName) continue; // Skip script itself
             
             const ext = path.extname(file).toLowerCase();
-            if (['.png', '.jpg', '.jpeg', '.svg', '.gif'].includes(ext)) {
+            const fileContent = await fs.readFile(path.join(runDir, file));
+            const base64Data = fileContent.toString('base64');
+            
+            if (['.png', '.jpg', '.jpeg', '.svg', '.gif', '.webp'].includes(ext)) {
                 console.log(`[Execute] Found generated image: ${file}`);
-                const fileContent = await fs.readFile(path.join(runDir, file));
-                images.push({
+                generatedFiles.push({
                     name: file,
-                    data: fileContent.toString('base64')
+                    data: base64Data,
+                    type: 'image'
+                });
+            } else {
+                console.log(`[Execute] Found generated file: ${file}`);
+                generatedFiles.push({
+                    name: file,
+                    data: base64Data,
+                    type: 'file'
                 });
             }
         }
@@ -104,7 +114,8 @@ router.post('/', authenticateToken, async (req, res) => {
                 error: 'Execution timed out', 
                 stdout, 
                 stderr,
-                images
+                images: generatedFiles.filter(f => f.type === 'image'),
+                files: generatedFiles
             });
         }
         
@@ -113,16 +124,18 @@ router.post('/', authenticateToken, async (req, res) => {
           error: error.message,
           stdout,
           stderr,
-          images
+          images: generatedFiles.filter(f => f.type === 'image'),
+          files: generatedFiles
         });
       }
 
-      console.log(`[Execute] Success. Returned ${images.length} images.`);
+      console.log(`[Execute] Success. Returned ${generatedFiles.length} files.`);
       res.json({
         success: true,
         stdout,
         stderr,
-        images
+        images: generatedFiles.filter(f => f.type === 'image'),
+        files: generatedFiles
       });
     });
 
