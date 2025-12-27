@@ -101,6 +101,8 @@ CREATE TABLE IF NOT EXISTS folders (
   color VARCHAR(50),
   icon_color VARCHAR(50),
   order_index INTEGER DEFAULT 0,
+  is_locked BOOLEAN DEFAULT FALSE,
+  password_hash VARCHAR(255),
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
   deleted_at BIGINT,
@@ -205,6 +207,37 @@ async function migrate() {
       console.log('✅ deleted_at column added successfully');
     } else {
       console.log('✅ deleted_at column already exists');
+    }
+
+    // Migración adicional: Añadir is_locked y password_hash a folders si no existen
+    console.log('🔄 Checking for is_locked column in folders...');
+    const checkLocked = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name='folders' AND column_name='is_locked'
+    `);
+    
+    if (checkLocked.rows.length === 0) {
+      console.log('📝 Adding is_locked column to folders table...');
+      await pool.query('ALTER TABLE folders ADD COLUMN is_locked BOOLEAN DEFAULT FALSE');
+      console.log('✅ is_locked column added successfully');
+    } else {
+      console.log('✅ is_locked column already exists');
+    }
+    
+    console.log('🔄 Checking for password_hash column in folders...');
+    const checkHash = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name='folders' AND column_name='password_hash'
+    `);
+    
+    if (checkHash.rows.length === 0) {
+      console.log('📝 Adding password_hash column to folders table...');
+      await pool.query('ALTER TABLE folders ADD COLUMN password_hash VARCHAR(255)');
+      console.log('✅ password_hash column added successfully');
+    } else {
+      console.log('✅ password_hash column already exists');
     }
     
     console.log('✅ Database migrations completed successfully');
