@@ -39,6 +39,8 @@ const FolderSchema = z.object({
   created_at: z.number(),
   updated_at: z.number(),
   deleted_at: z.number().nullable().optional(),
+  is_locked: z.boolean().optional(),
+  password_hash: z.string().nullable().optional(),
 });
 
 const PushSchema = z.object({
@@ -198,16 +200,18 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
       for (const folder of folders) {
         const safeUpdatedAt = serverTime;
         await client.query(
-          `INSERT INTO folders (user_id, path, icon, color, icon_color, order_index, created_at, updated_at, deleted_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          `INSERT INTO folders (user_id, path, icon, color, icon_color, order_index, created_at, updated_at, deleted_at, is_locked, password_hash)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            ON CONFLICT (user_id, path) DO UPDATE SET
              icon = EXCLUDED.icon,
              color = EXCLUDED.color,
              icon_color = EXCLUDED.icon_color,
              order_index = EXCLUDED.order_index,
              updated_at = EXCLUDED.updated_at,
-             deleted_at = EXCLUDED.deleted_at`,
-          [userId, folder.path, folder.icon, folder.color, folder.icon_color, folder.order_index, folder.created_at, safeUpdatedAt, folder.deleted_at ? safeUpdatedAt : null]
+             deleted_at = EXCLUDED.deleted_at,
+             is_locked = EXCLUDED.is_locked,
+             password_hash = EXCLUDED.password_hash`,
+          [userId, folder.path, folder.icon, folder.color, folder.icon_color, folder.order_index, folder.created_at, safeUpdatedAt, folder.deleted_at ? safeUpdatedAt : null, folder.is_locked || false, folder.password_hash || null]
         );
       }
     }
