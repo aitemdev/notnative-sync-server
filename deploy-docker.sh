@@ -5,26 +5,167 @@
 
 set -e
 
-echo "🐳 Starting Docker deployment..."
-
-# Colors
+# Colores para output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
 
-APP_DIR="$HOME/notnative-sync-server" # Adjust if needed, user seems to be in ~/notnative-sync-server based on logs
-# User logs: ubuntu@vps-0990c918:~/notnative-sync-server$
+# Función para imprimir mensajes
+log_info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
 
-echo -e "${YELLOW}1. Pulling latest code...${NC}"
-git pull origin main
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
 
-echo -e "${YELLOW}2. Building and restarting containers...${NC}"
-docker compose down
-docker compose build --no-cache
-docker compose up -d
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
 
-echo -e "${YELLOW}3. Pruning unused images...${NC}"
+echo "🐳 Iniciando despliegue de NotNative VPS Server..."
+echo "=========================================="
+echo ""
+
+# Verificar si estamos en el directorio correcto
+if [ ! -f "package.json" ]; then
+    log_error "No se encontró package.json. Por favor ejecuta este script desde el directorio vps-server/"
+    exit 1
+fi
+
+# Paso 1: Instalar dependencias
+echo ""
+echo "------------------------------------------"
+log_info "Paso 1/4: Instalando dependencias..."
+echo "------------------------------------------"
+
+npm install
+
+if [ $? -ne 0 ]; then
+    log_error "Falló la instalación de dependencias"
+    exit 1
+fi
+
+log_info "✅ Dependencias instaladas correctamente"
+
+# Paso 2: Compilar TypeScript
+echo ""
+echo "------------------------------------------"
+log_info "Paso 2/4: Compilando TypeScript..."
+echo "------------------------------------------"
+
+npm run build
+
+if [ $? -ne 0 ]; then
+    log_error "Falló la compilación de TypeScript"
+    exit 1
+fi
+
+log_info "✅ TypeScript compilado correctamente"
+
+# Paso 3: Verificar que dist/ existe
+echo ""
+echo "------------------------------------------"
+log_info "Paso 3/4: Verificando compilación..."
+echo "------------------------------------------"
+
+if [ ! -d "dist" ]; then
+    log_error "No se encontró el directorio dist/. La compilación falló."
+    exit 1
+fi
+
+if [ ! -f "dist/index.js" ]; then
+    log_error "No se encontró dist/index.js. La compilación falló."
+    exit 1
+fi
+
+log_info "✅ Verificación de compilación exitosa"
+
+# Paso 4: Reconstruir contenedor Docker
+echo ""
+echo "------------------------------------------"
+log_info "Paso 4/4: Reconstruyendo contenedor Docker..."
+echo "------------------------------------------"
+
+if [ -f "docker-compose.yml" ]; then
+    log_info "Reconstruyendo contenedor Docker con docker-compose..."
+
+    docker compose down
+
+    if [ $? -ne 0 ]; then
+        log_warn "Advertencia: docker compose down falló, pero continuando..."
+    fi
+
+    docker compose build --no-cache
+
+    if [ $? -ne 0 ]; then
+        log_error "Falló la construcción del contenedor Docker"
+        exit 1
+    fi
+
+    log_info "✅ Contenedor Docker reconstruido exitosamente"
+else
+    log_warn "No se encontró docker-compose.yml, saltando reconstrucción Docker"
+    log_info "Si usas Docker manualmente, ejecuta: docker compose build"
+fi
+
+# Paso 5: Iniciar servicios
+echo ""
+echo "------------------------------------------"
+log_info "Paso 5/5: Iniciando servicios..."
+echo "------------------------------------------"
+
+if [ -f "docker-compose.yml" ]; then
+    log_info "Iniciando servicios con docker compose up -d..."
+
+    docker compose up -d
+
+    if [ $? -ne 0 ]; then
+        log_error "Falló el inicio de los servicios Docker"
+        exit 1
+    fi
+
+    # Esperar unos segundos para que el servicio inicie
+    echo ""
+    log_info "Esperando 5 segundos para que el servicio inicie..."
+    sleep 5
+
+    # Mostrar logs de inicio
+    echo ""
+    echo "------------------------------------------"
+    log_info "Logs de inicio del servicio:"
+    echo "------------------------------------------"
+    docker compose logs --tail=50
+
+    log_info "✅ Servicios Docker iniciados exitosamente"
+else
+    log_warn "No se encontró docker-compose.yml"
+    log_info "Si usas Docker manualmente, ejecuta: docker compose up -d"
+fi
+
+# Paso 6: Limpiar imágenes Docker no usadas (opcional)
+echo ""
+echo "------------------------------------------"
+log_info "Paso 6/6: Limpiando imágenes Docker no usadas..."
+echo "------------------------------------------"
+
 docker image prune -f
 
-echo -e "${YELLOW}4. Showing logs (Ctrl+C to exit)...${NC}"
-docker compose logs -f
+log_info "✅ Limpieza completada"
+
+# Finalización exitosa
+echo ""
+echo "=========================================="
+log_info "¡Despliegue completado exitosamente!"
+echo "=========================================="
+echo ""
+echo "Para verificar que el servicio está corriendo:"
+echo "  - Docker: docker compose logs -f"
+echo "  - Sin Docker: tail -f logs/app.log (si configuras logging)"
+echo ""
+echo "El servicio estará disponible en el puerto 3000 (HTTP) y 3001 (WebSocket)"
+echo ""
+echo "Para monitorear el modelo de autocompletado:"
+echo "  Busca en los logs: '[Autocomplete] Model loaded'"
+echo ""

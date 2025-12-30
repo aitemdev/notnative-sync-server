@@ -3,7 +3,33 @@ import { z } from 'zod';
 import { autocompleteService, AutocompleteRequest } from '../services/autocomplete-service';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 
+// Load transformers module dynamically (ESM support)
+let transformersEnv: any = null;
+
+async function loadTransformers() {
+  if (transformersEnv) {
+    return;
+  }
+
+  try {
+    const transformers = await import('@xenova/transformers');
+    transformersEnv = (transformers as any).env;
+
+    if (transformersEnv) {
+      (transformersEnv as any).allowLocalModels = false;
+      (transformersEnv as any).useBrowserCache = false;
+    }
+
+    console.log('[AI Routes] Transformers loaded successfully');
+  } catch (error) {
+    console.error('[AI Routes] Failed to load transformers:', error);
+  }
+}
+
 const router = Router();
+
+// Load transformers on module import
+loadTransformers().catch(console.error);
 
 // Validation schema for autocomplete request
 const AutocompleteSchema = z.object({

@@ -1,18 +1,20 @@
-import { pipeline, env } from '@xenova/transformers';
+// Dynamic import for ESM module
+let pipeline: any = null;
+let env: any = null;
 
 // Configuration
 const SYSTEM_PROMPT = `You are a helpful writing assistant for NotNative, a note-taking application with smart variables, formulas, wikilinks, and canvas capabilities.
 
-Your task is to complete user's text naturally and intelligently based on the provided context.
+Your task is to complete user's text naturally and intelligently based on provided context.
 
 INSTRUCTIONS:
 - Continue EXACTLY where user left off
-- Do NOT repeat the last words of the input
+- Do NOT repeat last words of the input
 - Do NOT start with capital letter unless it's a new sentence
 - Be concise (max 1-2 sentences)
 - Use the SAME LANGUAGE as the input (Spanish/English)
 - You MAY suggest wikilinks like [[Note Name]] if the context refers to an existing note found in the "Context from other notes" section
-- You MAY suggest tags like #tag if appropriate for the content
+- You MAY suggest tags like #tag if it is appropriate for the content
 - You MAY suggest smart variables like [name: value] or formulas like {{ expression }} if the context suggests it
 - Return ONLY the suggested text to complete the thought
 - Do not output markdown code blocks, just the raw text
@@ -20,10 +22,6 @@ INSTRUCTIONS:
 
 const MAX_TOKENS = parseInt(process.env.AUTOCOMPLETE_MAX_TOKENS || '50');
 const DEFAULT_TEMPERATURE = parseFloat(process.env.AUTOCOMPLETE_TEMPERATURE || '0.7');
-
-// Configure environment
-env.allowLocalModels = false;
-env.useBrowserCache = false;
 
 interface RelatedNote {
   noteName: string;
@@ -55,6 +53,30 @@ class AutocompleteService {
   private totalLatency = 0;
   private errorCount = 0;
 
+  private async loadTransformers(): Promise<void> {
+    if (pipeline && env) {
+      console.log('[Autocomplete] Transformers already loaded');
+      return;
+    }
+
+    try {
+      const transformers = await import('@xenova/transformers');
+      pipeline = (transformers as any).pipeline;
+      env = (transformers as any).env;
+
+      // Configure environment
+      if (env) {
+        (env as any).allowLocalModels = false;
+        (env as any).useBrowserCache = false;
+      }
+
+      console.log('[Autocomplete] Transformers loaded successfully');
+    } catch (error) {
+      console.error('[Autocomplete] Failed to load transformers:', error);
+      throw error;
+    }
+  }
+
   async initialize(): Promise<void> {
     if (this.modelLoaded || this.isLoading) {
       return;
@@ -62,6 +84,9 @@ class AutocompleteService {
 
     this.isLoading = true;
     const startTime = Date.now();
+
+    // Load transformers module dynamically (ESM support)
+    await this.loadTransformers();
 
     console.log(`[Autocomplete] Loading model: ${this.modelName}...`);
 
