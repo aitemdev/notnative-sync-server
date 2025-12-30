@@ -34,10 +34,38 @@ if [ ! -f "package.json" ]; then
     exit 1
 fi
 
-# Paso 1: Instalar dependencias
+# Verificar si hay cambios locales que puedan causar conflicto
+if git status --porcelain | grep -q .; then
+    log_warn "Detectados cambios locales. Haciendo stash automático..."
+    git stash push -m "Automated stash before deploy - $(date)"
+
+    if [ $? -ne 0 ]; then
+        log_error "Falló el stash automático. Por favor resuelve los conflictos manualmente."
+        exit 1
+    fi
+
+    log_info "✅ Cambios guardados temporalmente"
+fi
+
+# Paso 1: Pull latest code
 echo ""
 echo "------------------------------------------"
-log_info "Paso 1/4: Instalando dependencias..."
+log_info "Paso 1/5: Actualizando código desde repositorio..."
+echo "------------------------------------------"
+
+git pull origin main
+
+if [ $? -ne 0 ]; then
+    log_error "Falló el git pull. Verifica que tienes acceso al repositorio."
+    exit 1
+fi
+
+log_info "✅ Código actualizado correctamente"
+
+# Paso 2: Instalar dependencias
+echo ""
+echo "------------------------------------------"
+log_info "Paso 2/5: Instalando dependencias..."
 echo "------------------------------------------"
 
 npm install
@@ -49,10 +77,10 @@ fi
 
 log_info "✅ Dependencias instaladas correctamente"
 
-# Paso 2: Compilar TypeScript
+# Paso 3: Compilar TypeScript
 echo ""
 echo "------------------------------------------"
-log_info "Paso 2/4: Compilando TypeScript..."
+log_info "Paso 3/5: Compilando TypeScript..."
 echo "------------------------------------------"
 
 npm run build
@@ -64,10 +92,10 @@ fi
 
 log_info "✅ TypeScript compilado correctamente"
 
-# Paso 3: Verificar que dist/ existe
+# Paso 4: Verificar que dist/ existe
 echo ""
 echo "------------------------------------------"
-log_info "Paso 3/4: Verificando compilación..."
+log_info "Paso 4/5: Verificando compilación..."
 echo "------------------------------------------"
 
 if [ ! -d "dist" ]; then
@@ -82,14 +110,14 @@ fi
 
 log_info "✅ Verificación de compilación exitosa"
 
-# Paso 4: Reconstruir contenedor Docker
+# Paso 5: Reconstruir contenedor Docker
 echo ""
 echo "------------------------------------------"
-log_info "Paso 4/4: Reconstruyendo contenedor Docker..."
+log_info "Paso 5/5: Reconstruyendo contenedor Docker..."
 echo "------------------------------------------"
 
 if [ -f "docker-compose.yml" ]; then
-    log_info "Reconstruyendo contenedor Docker con docker-compose..."
+    log_info "Reconstruyendo contenedor Docker con docker compose..."
 
     docker compose down
 
@@ -110,10 +138,10 @@ else
     log_info "Si usas Docker manualmente, ejecuta: docker compose build"
 fi
 
-# Paso 5: Iniciar servicios
+# Paso 6: Iniciar servicios
 echo ""
 echo "------------------------------------------"
-log_info "Paso 5/5: Iniciando servicios..."
+log_info "Paso 6/6: Iniciando servicios..."
 echo "------------------------------------------"
 
 if [ -f "docker-compose.yml" ]; then
@@ -144,10 +172,10 @@ else
     log_info "Si usas Docker manualmente, ejecuta: docker compose up -d"
 fi
 
-# Paso 6: Limpiar imágenes Docker no usadas (opcional)
+# Paso 7: Limpiar imágenes Docker no usadas (opcional)
 echo ""
 echo "------------------------------------------"
-log_info "Paso 6/6: Limpiando imágenes Docker no usadas..."
+log_info "Paso 7/7: Limpiando imágenes Docker no usadas..."
 echo "------------------------------------------"
 
 docker image prune -f
