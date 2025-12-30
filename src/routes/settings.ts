@@ -11,6 +11,7 @@ const settingsSchema = z.object({
   chatModel: z.string().optional(),
   embeddingModel: z.string().optional(),
   braveApiKey: z.string().optional(),
+  useVpsAutocomplete: z.boolean().default(false),
 });
 
 // GET /api/settings - Get user settings
