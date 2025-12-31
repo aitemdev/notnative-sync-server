@@ -15,8 +15,18 @@ async function loadTransformers() {
 
     // Configurar entorno
     if (transformers.env) {
-      transformers.env.allowLocalModels = false;
+      // Permitir modelos locales descargados
+      transformers.env.allowLocalModels = true;
+      // Usar cache local para no depender de browser
       transformers.env.useBrowserCache = false;
+      // Directorio de cache local (dentro del contenedor)
+      transformers.env.localModelsPath = '/app/models';
+      // Permitir modelos remotos si no están localmente
+      transformers.env.allowRemoteModels = true;
+      // HuggingFace token opcional (si está configurado)
+      if (process.env.HF_TOKEN) {
+        transformers.env.useCustomFetch = true;
+      }
     }
 
     console.log('[TransformersBridge] Module loaded successfully');
