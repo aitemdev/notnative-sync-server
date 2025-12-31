@@ -37,7 +37,6 @@ services:
       MAX_FILE_SIZE: ${MAX_FILE_SIZE:-10485760}
     volumes:
       - uploads_data:/app/uploads
-      - ./models:/app/models
     ports:
       - "3000:3000"
       - "3001:3001"

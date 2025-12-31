@@ -9,9 +9,7 @@ import notesRoutes from './routes/notes';
 import attachmentsRoutes from './routes/attachments';
 import settingsRoutes from './routes/settings';
 import executeRoutes from './routes/execute';
-import aiRoutes from './routes/ai';
 import { WebSocketSyncServer } from './websocket/server';
-import { autocompleteService } from './services/autocomplete-service';
 
 dotenv.config();
 
@@ -41,7 +39,6 @@ app.use('/api/notes', notesRoutes);
 app.use('/api/attachments', attachmentsRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/execute', executeRoutes);
-app.use('/api/ai', aiRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
@@ -62,16 +59,6 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 app.listen(PORT, () => {
   console.log(`🚀 NotNative Sync Server running on port ${PORT}`);
   console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
-
-  // Initialize autocomplete service in background
-  if (process.env.AUTOCOMPLETE_ENABLED !== 'false') {
-    console.log('🤖 Initializing autocomplete service...');
-    autocompleteService.initialize().catch((error) => {
-      console.error('❌ Failed to initialize autocomplete service:', error);
-    });
-  } else {
-    console.log('🤖 Autocomplete service disabled');
-  }
 });
 
 // Start WebSocket server

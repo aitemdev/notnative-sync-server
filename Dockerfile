@@ -11,11 +11,7 @@ RUN apt-get update && apt-get install -y \
     python3-pandas \
     python3-matplotlib \
     python3-pil \
-    curl \
     && rm -rf /var/lib/apt/lists/*
-
-# Create models directory for local cache
-RUN mkdir -p /app/models && chown -R node:node /app/models
 
 # Copiar package files
 COPY package*.json ./
