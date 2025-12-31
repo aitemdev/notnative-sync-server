@@ -48,7 +48,7 @@ class AutocompleteService {
   private pipelineFunction: any = null;
   private modelLoaded = false;
   private isLoading = false;
-  private readonly modelName = process.env.AUTOCOMPLETE_MODEL || 'Xenova/TinyLlama-1.1B-chat';
+  private readonly modelName = process.env.AUTOCOMPLETE_MODEL || 'Xenova/TinyLlama-1.1B-Chat-v1.0';
   private requestCount = 0;
   private totalLatency = 0;
   private errorCount = 0;
