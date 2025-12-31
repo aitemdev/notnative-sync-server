@@ -1,4 +1,7 @@
-// Dynamic import for ESM module
+// Dynamic import for ESM module via wrapper
+const { loadTransformers: loadTransformersBridge } = require('./transformers-bridge.cjs');
+
+let transformersModule: any = null;
 let pipeline: any = null;
 let env: any = null;
 
@@ -60,9 +63,10 @@ class AutocompleteService {
     }
 
     try {
-      const transformers = await import('@xenova/transformers');
-      pipeline = (transformers as any).pipeline;
-      env = (transformers as any).env;
+      // Usar el bridge que maneja la carga del módulo ESM
+      const module = await loadTransformersBridge();
+      pipeline = module.pipeline;
+      env = module.env;
 
       // Configure environment
       if (env) {

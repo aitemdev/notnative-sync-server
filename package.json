@@ -1,11 +1,11 @@
 {
-  "name": "notnative-sync-server",
-  "version": "1.0.0",
-  "description": "NotNative Electron - VPS Sync Server",
-  "main": "dist/index.js",
-  "scripts": {
+   "name": "notnative-sync-server",
+   "version": "1.0.0",
+   "description": "NotNative Electron - VPS Sync Server",
+   "main": "dist/index.js",
+   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && cp src/services/transformers-bridge.cjs dist/services/",
     "start": "node dist/index.js",
     "migrate": "tsx src/utils/migrate.ts",
     "migrate:add-deleted-at": "tsx src/utils/add-deleted-at.ts",
