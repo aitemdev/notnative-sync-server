@@ -1,18 +1,14 @@
-// Dynamic import for ESM module via wrapper
+// Import bridge for ESM module compatibility
 const { loadTransformers: loadTransformersBridge } = require('./transformers-bridge.cjs');
 
-let transformersModule: any = null;
-let pipeline: any = null;
-let env: any = null;
-
 // Configuration
-const SYSTEM_PROMPT = `You are a helpful writing assistant for NotNative, a note-taking application with smart variables, formulas, wikilinks, and canvas capabilities.
+const SYSTEM_PROMPT = `You are a writing assistant for NotNative, a note-taking application with markdown, code blocks, tables, smart variables, formulas, wikilinks, and canvas capabilities.
 
 Your task is to complete user's text naturally and intelligently based on provided context.
 
 INSTRUCTIONS:
 - Continue EXACTLY where user left off
-- Do NOT repeat last words of the input
+- Do NOT repeat last words of input
 - Do NOT start with capital letter unless it's a new sentence
 - Be concise (max 1-2 sentences)
 - Use the SAME LANGUAGE as the input (Spanish/English)
@@ -49,37 +45,13 @@ interface AutocompleteResponse {
 
 class AutocompleteService {
   private generator: any = null;
+  private pipelineFunction: any = null;
   private modelLoaded = false;
   private isLoading = false;
   private readonly modelName = process.env.AUTOCOMPLETE_MODEL || 'Xenova/TinyLlama-1.1B-chat';
   private requestCount = 0;
   private totalLatency = 0;
   private errorCount = 0;
-
-  private async loadTransformers(): Promise<void> {
-    if (pipeline && env) {
-      console.log('[Autocomplete] Transformers already loaded');
-      return;
-    }
-
-    try {
-      // Usar el bridge que maneja la carga del módulo ESM
-      const module = await loadTransformersBridge();
-      pipeline = module.pipeline;
-      env = module.env;
-
-      // Configure environment
-      if (env) {
-        (env as any).allowLocalModels = false;
-        (env as any).useBrowserCache = false;
-      }
-
-      console.log('[Autocomplete] Transformers loaded successfully');
-    } catch (error) {
-      console.error('[Autocomplete] Failed to load transformers:', error);
-      throw error;
-    }
-  }
 
   async initialize(): Promise<void> {
     if (this.modelLoaded || this.isLoading) {
@@ -95,8 +67,12 @@ class AutocompleteService {
     console.log(`[Autocomplete] Loading model: ${this.modelName}...`);
 
     try {
-      this.generator = await pipeline('text-generation', this.modelName, {
+      // Load model with explicit local path to avoid downloading from HuggingFace
+      // When using localModelsPath, transformers should check there first
+      this.pipelineFunction = (await loadTransformersBridge()).pipeline;
+      this.generator = await this.pipelineFunction('text-generation', this.modelName, {
         quantized: true,
+        local_files_only: process.env.LOCAL_FILES_ONLY === 'true',
         progress_callback: (progress: any) => {
           if (progress.status === 'progress') {
             const percent = Math.round(progress.progress * 100);
@@ -114,8 +90,22 @@ class AutocompleteService {
     } catch (error) {
       console.error('[Autocomplete] Failed to load model:', error);
       throw error;
-    } finally {
-      this.isLoading = false;
+    }
+  }
+
+  private async loadTransformers(): Promise<void> {
+    if (this.pipelineFunction) {
+      console.log('[Autocomplete] Transformers already loaded');
+      return;
+    }
+
+    try {
+      const transformers = await loadTransformersBridge();
+      this.pipelineFunction = transformers.pipeline;
+      console.log('[Autocomplete] Transformers loaded successfully');
+    } catch (error) {
+      console.error('[Autocomplete] Failed to load transformers:', error);
+      throw error;
     }
   }
 
@@ -125,6 +115,9 @@ class AutocompleteService {
 
   private buildPrompt(req: AutocompleteRequest): string {
     let prompt = '';
+
+    // Add system instructions
+    prompt += SYSTEM_PROMPT + '\n\n';
 
     if (req.relatedNotes && req.relatedNotes.length > 0) {
       const notesContext = req.relatedNotes
@@ -188,12 +181,12 @@ class AutocompleteService {
     }
   }
 
-  getSystemPrompt(): string {
-    return SYSTEM_PROMPT;
-  }
-
   private estimateTokens(text: string): number {
     return Math.ceil(text.length / 4);
+  }
+
+  getSystemPrompt(): string {
+    return SYSTEM_PROMPT;
   }
 
   getStatus(): any {

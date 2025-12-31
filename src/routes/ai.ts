@@ -3,10 +3,10 @@ import { z } from 'zod';
 import { autocompleteService, AutocompleteRequest } from '../services/autocomplete-service';
 import { AuthRequest, authenticateToken } from '../middleware/auth';
 
+const router = Router();
+
 // Load transformers module via bridge (ESM support)
 const { loadTransformers: loadTransformersBridge } = require('../services/transformers-bridge.cjs');
-
-const router = Router();
 
 // Load transformers on module import via bridge
 loadTransformersBridge().catch(console.error);
