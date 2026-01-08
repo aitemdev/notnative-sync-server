@@ -65,21 +65,23 @@ router.post('/pull', async (req: AuthRequest, res: Response) => {
     // This prevents old deleted notes from being restored on fresh sync
     // OPTIMIZATION: If lastSyncTimestamp is 0 (fresh sync), DO NOT send deleted notes
     // The client has no notes, so it doesn't need to delete anything.
+    // Use >= instead of > to avoid race conditions where client/server timestamps are identical
     const notesResult = await pool.query(
       `SELECT * FROM notes 
        WHERE user_id = $1 
        AND (
-         (updated_at > $2 AND deleted_at IS NULL)
-         OR (deleted_at > $2 AND $2 > 0)
+         (updated_at >= $2 AND deleted_at IS NULL)
+         OR (deleted_at >= $2 AND $2 > 0)
        )`,
       [userId, lastSyncTimestamp]
     );
 
     // Get changed folders
+    // Use >= instead of > to avoid race conditions
     const foldersResult = await pool.query(
       `SELECT * FROM folders 
        WHERE user_id = $1 
-       AND (updated_at > $2 OR deleted_at > $2)`,
+       AND (updated_at >= $2 OR deleted_at >= $2)`,
       [userId, lastSyncTimestamp]
     );
 
@@ -250,12 +252,13 @@ router.post('/attachments/pull', async (req: AuthRequest, res: Response) => {
     }
 
     // Get attachments for the specified notes that were updated/deleted after lastSyncTimestamp
+    // Use >= instead of > to avoid race conditions
     const attachmentsResult = await pool.query(
       `SELECT id, note_uuid, file_name, file_hash, file_size, mime_type, created_at, updated_at, deleted_at
        FROM attachments 
        WHERE user_id = $1 
        AND note_uuid = ANY($2)
-       AND (updated_at > $3 OR deleted_at > $3)`,
+       AND (updated_at >= $3 OR deleted_at >= $3)`,
       [userId, noteUuids, lastSyncTimestamp]
     );
 
