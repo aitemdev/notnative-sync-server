@@ -23,8 +23,12 @@ docker compose down
 docker compose build --no-cache
 docker compose up -d
 
-echo -e "${YELLOW}3. Pruning unused images...${NC}"
+echo -e "${YELLOW}3. Running database migrations...${NC}"
+echo -e "  - Adding favorites columns..."
+docker compose exec -T server npm run migrate:add-favorites || echo -e "${YELLOW}⚠️  Migration already applied or failed${NC}"
+
+echo -e "${YELLOW}4. Pruning unused images...${NC}"
 docker image prune -f
 
-echo -e "${YELLOW}4. Showing logs (Ctrl+C to exit)...${NC}"
+echo -e "${YELLOW}5. Showing logs (Ctrl+C to exit)...${NC}"
 docker compose logs -f
