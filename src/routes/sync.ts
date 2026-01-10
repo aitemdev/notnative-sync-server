@@ -28,6 +28,7 @@ const NoteSchema = z.object({
   created_at: z.number(),
   updated_at: z.number(),
   deleted_at: z.number().nullable().optional(),
+  is_favorite: z.number().optional(), // 0 or 1
 });
 
 const FolderSchema = z.object({
@@ -41,6 +42,7 @@ const FolderSchema = z.object({
   deleted_at: z.number().nullable().optional(),
   is_locked: z.boolean().optional(),
   password_hash: z.string().nullable().optional(),
+  is_favorite: z.number().optional(), // 0 or 1
 });
 
 const PushSchema = z.object({
@@ -177,8 +179,8 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
         );
 
         await client.query(
-          `INSERT INTO notes (user_id, uuid, name, path, folder, content, content_hash, order_index, icon, icon_color, created_at, updated_at, deleted_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          `INSERT INTO notes (user_id, uuid, name, path, folder, content, content_hash, order_index, icon, icon_color, created_at, updated_at, deleted_at, is_favorite)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
            ON CONFLICT (user_id, uuid) DO UPDATE SET
              name = EXCLUDED.name,
              path = EXCLUDED.path,
@@ -189,9 +191,10 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
              icon = EXCLUDED.icon,
              icon_color = EXCLUDED.icon_color,
              updated_at = EXCLUDED.updated_at,
-             deleted_at = EXCLUDED.deleted_at
+             deleted_at = EXCLUDED.deleted_at,
+             is_favorite = EXCLUDED.is_favorite
            WHERE EXCLUDED.updated_at > notes.updated_at`,
-          [userId, note.uuid, note.name, normalizedPath, normalizedFolder, note.content, note.content_hash, note.order_index, note.icon, note.icon_color, safeCreatedAt, safeUpdatedAt, safeDeletedAt]
+          [userId, note.uuid, note.name, normalizedPath, normalizedFolder, note.content, note.content_hash, note.order_index, note.icon, note.icon_color, safeCreatedAt, safeUpdatedAt, safeDeletedAt, note.is_favorite ?? 0]
         );
       }
     }
@@ -202,8 +205,8 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
       for (const folder of folders) {
         const safeUpdatedAt = serverTime;
         await client.query(
-          `INSERT INTO folders (user_id, path, icon, color, icon_color, order_index, created_at, updated_at, deleted_at, is_locked, password_hash)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          `INSERT INTO folders (user_id, path, icon, color, icon_color, order_index, created_at, updated_at, deleted_at, is_locked, password_hash, is_favorite)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
            ON CONFLICT (user_id, path) DO UPDATE SET
              icon = EXCLUDED.icon,
              color = EXCLUDED.color,
@@ -212,8 +215,9 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
              updated_at = EXCLUDED.updated_at,
              deleted_at = EXCLUDED.deleted_at,
              is_locked = EXCLUDED.is_locked,
-             password_hash = EXCLUDED.password_hash`,
-          [userId, folder.path, folder.icon, folder.color, folder.icon_color, folder.order_index, folder.created_at, safeUpdatedAt, folder.deleted_at ? safeUpdatedAt : null, folder.is_locked || false, folder.password_hash || null]
+             password_hash = EXCLUDED.password_hash,
+             is_favorite = EXCLUDED.is_favorite`,
+          [userId, folder.path, folder.icon, folder.color, folder.icon_color, folder.order_index, folder.created_at, safeUpdatedAt, folder.deleted_at ? safeUpdatedAt : null, folder.is_locked || false, folder.password_hash || null, folder.is_favorite ?? 0]
         );
       }
     }
