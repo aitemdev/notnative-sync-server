@@ -61,7 +61,6 @@ CREATE TABLE IF NOT EXISTS notes (
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
   deleted_at BIGINT,
-  is_favorite INTEGER DEFAULT 0,
   UNIQUE(user_id, uuid),
   UNIQUE(user_id, path)
 );
@@ -70,7 +69,6 @@ CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id);
 CREATE INDEX IF NOT EXISTS idx_notes_uuid ON notes(uuid);
 CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(user_id, folder);
-CREATE INDEX IF NOT EXISTS idx_notes_favorite ON notes(user_id, is_favorite) WHERE is_favorite = 1;
 
 -- Tags table (DEPRECATED - Tags are now extracted locally from note content)
 -- CREATE TABLE IF NOT EXISTS tags (
@@ -108,12 +106,10 @@ CREATE TABLE IF NOT EXISTS folders (
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
   deleted_at BIGINT,
-  is_favorite INTEGER DEFAULT 0,
   UNIQUE(user_id, path)
 );
 
 CREATE INDEX IF NOT EXISTS idx_folders_user ON folders(user_id);
-CREATE INDEX IF NOT EXISTS idx_folders_favorite ON folders(user_id, is_favorite) WHERE is_favorite = 1;
 
 -- Attachments table (metadata only, files in S3)
 CREATE TABLE IF NOT EXISTS attachments (
