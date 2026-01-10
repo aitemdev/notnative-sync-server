@@ -243,6 +243,39 @@ async function migrate() {
     } else {
       console.log('✅ password_hash column already exists');
     }
+
+    // Migración adicional: Añadir is_favorite a notes y folders si no existen
+    console.log('🔄 Checking for is_favorite column in notes...');
+    const checkNotesFavorite = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name='notes' AND column_name='is_favorite'
+    `);
+    
+    if (checkNotesFavorite.rows.length === 0) {
+      console.log('📝 Adding is_favorite column to notes table...');
+      await pool.query('ALTER TABLE notes ADD COLUMN is_favorite INTEGER DEFAULT 0');
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_notes_favorite ON notes(user_id, is_favorite) WHERE is_favorite = 1`);
+      console.log('✅ is_favorite column added successfully to notes');
+    } else {
+      console.log('✅ is_favorite column already exists in notes');
+    }
+    
+    console.log('🔄 Checking for is_favorite column in folders...');
+    const checkFoldersFavorite = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name='folders' AND column_name='is_favorite'
+    `);
+    
+    if (checkFoldersFavorite.rows.length === 0) {
+      console.log('📝 Adding is_favorite column to folders table...');
+      await pool.query('ALTER TABLE folders ADD COLUMN is_favorite INTEGER DEFAULT 0');
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_folders_favorite ON folders(user_id, is_favorite) WHERE is_favorite = 1`);
+      console.log('✅ is_favorite column added successfully to folders');
+    } else {
+      console.log('✅ is_favorite column already exists in folders');
+    }
     
     console.log('✅ Database migrations completed successfully');
     process.exit(0);
