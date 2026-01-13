@@ -168,6 +168,28 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
           }
         }
 
+        // 🔍 DEBUG: Check if note exists and log potential conflicts
+        const existingNote = await client.query(
+          `SELECT updated_at, content_hash, name FROM notes WHERE user_id = $1 AND uuid = $2`,
+          [userId, note.uuid]
+        );
+
+        if (existingNote.rows.length > 0) {
+          const serverUpdatedAt = existingNote.rows[0].updated_at;
+          const serverHash = existingNote.rows[0].content_hash;
+          const serverName = existingNote.rows[0].name;
+          
+          // Log if we're potentially rejecting an update due to timestamp
+          if (safeUpdatedAt <= serverUpdatedAt && note.content_hash !== serverHash) {
+            console.warn(`⚠️ POTENTIAL CONFLICT for note "${note.name}" (UUID: ${note.uuid})`);
+            console.warn(`   Client timestamp: ${safeUpdatedAt} (${new Date(safeUpdatedAt).toISOString()})`);
+            console.warn(`   Server timestamp: ${serverUpdatedAt} (${new Date(serverUpdatedAt).toISOString()})`);
+            console.warn(`   Content hash - Client: ${note.content_hash}, Server: ${serverHash}`);
+            console.warn(`   Device: ${deviceId}, Time offset: ${timeOffset}ms`);
+            console.warn(`   🔥 Content differs but client timestamp is not newer - forcing update with incremented timestamp`);
+          }
+        }
+
         // Handle path collision with different UUID
         // If a note exists with the same path but different UUID, we rename the old one
         // to avoid unique constraint violation on (user_id, path).
@@ -178,6 +200,8 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
           [userId, normalizedPath, note.uuid]
         );
 
+        // 🛠️ FIX: Use content_hash for conflict detection instead of just timestamp
+        // This prevents losing updates when timestamps are skewed
         await client.query(
           `INSERT INTO notes (user_id, uuid, name, path, folder, content, content_hash, order_index, icon, icon_color, created_at, updated_at, deleted_at, is_favorite)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
@@ -190,10 +214,26 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
              order_index = EXCLUDED.order_index,
              icon = EXCLUDED.icon,
              icon_color = EXCLUDED.icon_color,
-             updated_at = EXCLUDED.updated_at,
+             updated_at = CASE
+               -- If content changed, always update with max timestamp to ensure sync
+               WHEN EXCLUDED.content_hash IS DISTINCT FROM notes.content_hash THEN
+                 GREATEST(EXCLUDED.updated_at, notes.updated_at + 1)
+               -- If content is same, use the newer timestamp
+               ELSE
+                 GREATEST(EXCLUDED.updated_at, notes.updated_at)
+             END,
              deleted_at = EXCLUDED.deleted_at,
              is_favorite = EXCLUDED.is_favorite
-           WHERE EXCLUDED.updated_at > notes.updated_at`,
+           WHERE 
+             -- Always update if content/metadata changed, regardless of timestamp
+             EXCLUDED.content_hash IS DISTINCT FROM notes.content_hash
+             OR EXCLUDED.deleted_at IS DISTINCT FROM notes.deleted_at
+             OR EXCLUDED.name != notes.name
+             OR EXCLUDED.path != notes.path
+             OR EXCLUDED.folder IS DISTINCT FROM notes.folder
+             OR EXCLUDED.is_favorite IS DISTINCT FROM notes.is_favorite
+             -- Or if timestamp is genuinely newer
+             OR EXCLUDED.updated_at > notes.updated_at`,
           [userId, note.uuid, note.name, normalizedPath, normalizedFolder, note.content, note.content_hash, note.order_index, note.icon, note.icon_color, safeCreatedAt, safeUpdatedAt, safeDeletedAt, note.is_favorite ?? 0]
         );
       }
