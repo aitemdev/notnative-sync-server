@@ -69,7 +69,7 @@ router.post('/upload', upload.single('file'), async (req: AuthRequest, res: Resp
 
     // Verificar si el archivo ya existe (deduplicación)
     const existingFile = await client.query(
-      'SELECT id, file_hash, s3_key FROM attachments WHERE file_hash = $1 AND user_id = $2 LIMIT 1',
+      'SELECT id, file_hash, s3_key FROM attachments WHERE file_hash = $1 AND user_id = $2 AND deleted_at IS NULL LIMIT 1',
       [fileHash, userId]
     );
 

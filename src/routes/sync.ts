@@ -302,7 +302,8 @@ router.post('/attachments/pull', async (req: AuthRequest, res: Response) => {
        FROM attachments 
        WHERE user_id = $1 
        AND note_uuid = ANY($2)
-       AND (updated_at >= $3 OR deleted_at >= $3)`,
+       AND deleted_at IS NULL
+       AND updated_at >= $3`,
       [userId, noteUuids, lastSyncTimestamp]
     );
 
