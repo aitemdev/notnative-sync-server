@@ -45,9 +45,29 @@ const FolderSchema = z.object({
   is_favorite: z.number().optional(), // 0 or 1
 });
 
+const CalendarEventSchema = z.object({
+  uuid: z.string(),
+  note_uuid: z.string().nullable().optional(),
+  title: z.string(),
+  description: z.string().nullable().optional(),
+  start_time: z.number(),
+  end_time: z.number(),
+  all_day: z.boolean().optional(),
+  location: z.string().nullable().optional(),
+  color: z.string().nullable().optional(),
+  reminder_minutes: z.number().nullable().optional(),
+  recurrence_rule: z.string().nullable().optional(),
+  recurrence_end: z.number().nullable().optional(),
+  status: z.number().optional(),
+  created_at: z.number(),
+  updated_at: z.number(),
+  deleted_at: z.number().nullable().optional(),
+});
+
 const PushSchema = z.object({
   notes: z.array(NoteSchema).optional(),
   folders: z.array(FolderSchema).optional(),
+  calendar_events: z.array(CalendarEventSchema).optional(),
   deviceId: z.string(),
   clientTimestamp: z.number().optional(),
 });
@@ -105,6 +125,27 @@ router.post('/pull', async (req: AuthRequest, res: Response) => {
       updated_at: Number(row.updated_at),
       deleted_at: row.deleted_at ? Number(row.deleted_at) : null,
     }));
+
+    // Get changed calendar events
+    const calendarEventsResult = await pool.query(
+      `SELECT * FROM calendar_events 
+       WHERE user_id = $1 
+       AND (
+         (updated_at >= $2 AND deleted_at IS NULL)
+         OR (deleted_at >= $2 AND $2 > 0)
+       )`,
+      [userId, lastSyncTimestamp]
+    );
+
+    const calendar_events = calendarEventsResult.rows.map(row => ({
+      ...row,
+      created_at: Number(row.created_at),
+      updated_at: Number(row.updated_at),
+      deleted_at: row.deleted_at ? Number(row.deleted_at) : null,
+      start_time: Number(row.start_time),
+      end_time: Number(row.end_time),
+      recurrence_end: row.recurrence_end ? Number(row.recurrence_end) : null,
+    }));
     
     // Log notes with missing content for debugging
     const notesWithoutContent = notes.filter(n => !n.content && !n.deleted_at);
@@ -116,6 +157,7 @@ router.post('/pull', async (req: AuthRequest, res: Response) => {
     res.json({
       notes,
       folders,
+      calendar_events,
       timestamp: Date.now(),
     });
 
@@ -129,7 +171,7 @@ router.post('/pull', async (req: AuthRequest, res: Response) => {
 router.post('/push', async (req: AuthRequest, res: Response) => {
   const client = await pool.connect();
   try {
-    const { notes, folders, deviceId, clientTimestamp } = PushSchema.parse(req.body);
+    const { notes, folders, calendar_events, deviceId, clientTimestamp } = PushSchema.parse(req.body);
     const userId = req.userId!;
     
     await client.query('BEGIN');
@@ -258,6 +300,67 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
              password_hash = EXCLUDED.password_hash,
              is_favorite = EXCLUDED.is_favorite`,
           [userId, folder.path, folder.icon, folder.color, folder.icon_color, folder.order_index, folder.created_at, safeUpdatedAt, folder.deleted_at ? safeUpdatedAt : null, folder.is_locked || false, folder.password_hash || null, folder.is_favorite ?? 0]
+        );
+      }
+    }
+
+    // Upsert Calendar Events
+    if (calendar_events) {
+      const serverTime = Date.now();
+      for (const event of calendar_events) {
+        // Adjust timestamps if client timestamp is provided
+        let safeUpdatedAt = event.updated_at;
+        let safeCreatedAt = event.created_at;
+        let safeDeletedAt = event.deleted_at;
+        
+        if (clientTimestamp) {
+          safeUpdatedAt = safeUpdatedAt + timeOffset;
+          safeCreatedAt = safeCreatedAt + timeOffset;
+          if (safeDeletedAt) safeDeletedAt = safeDeletedAt + timeOffset;
+        }
+
+        await client.query(
+          `INSERT INTO calendar_events (
+             user_id, uuid, note_uuid, title, description, start_time, end_time, 
+             all_day, location, color, reminder_minutes, recurrence_rule, recurrence_end, 
+             status, created_at, updated_at, deleted_at
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+           ON CONFLICT (user_id, uuid) DO UPDATE SET
+             note_uuid = EXCLUDED.note_uuid,
+             title = EXCLUDED.title,
+             description = EXCLUDED.description,
+             start_time = EXCLUDED.start_time,
+             end_time = EXCLUDED.end_time,
+             all_day = EXCLUDED.all_day,
+             location = EXCLUDED.location,
+             color = EXCLUDED.color,
+             reminder_minutes = EXCLUDED.reminder_minutes,
+             recurrence_rule = EXCLUDED.recurrence_rule,
+             recurrence_end = EXCLUDED.recurrence_end,
+             status = EXCLUDED.status,
+             updated_at = EXCLUDED.updated_at,
+             deleted_at = EXCLUDED.deleted_at
+           WHERE calendar_events.updated_at <= EXCLUDED.updated_at`,
+          [
+            userId, 
+            event.uuid, 
+            event.note_uuid || null, 
+            event.title, 
+            event.description || null, 
+            event.start_time, 
+            event.end_time,
+            event.all_day || false, 
+            event.location || null, 
+            event.color || null, 
+            event.reminder_minutes || null, 
+            event.recurrence_rule || null, 
+            event.recurrence_end || null,
+            event.status || 1, 
+            safeCreatedAt, 
+            safeUpdatedAt, 
+            safeDeletedAt || null
+          ]
         );
       }
     }

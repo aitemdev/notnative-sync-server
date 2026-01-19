@@ -296,8 +296,20 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
 
     await client.query('COMMIT');
 
-    // Nota: No eliminamos el archivo físico inmediatamente
-    // El script cleanup-orphans se encargará de eliminar archivos huérfanos
+    // Borrado inmediato: eliminar el archivo físico si ya no hay referencias activas
+    try {
+      const remaining = await pool.query(
+        'SELECT id FROM attachments WHERE s3_key = $1 AND deleted_at IS NULL LIMIT 1',
+        [attachment.s3_key]
+      );
+
+      if (remaining.rows.length === 0) {
+        await deleteFile(attachment.s3_key);
+        console.log(`🗑️ Deleted attachment file from storage: ${attachment.s3_key}`);
+      }
+    } catch (cleanupError) {
+      console.error('Immediate delete cleanup error:', cleanupError);
+    }
 
     res.json({ success: true, message: 'Attachment deleted successfully' });
   } catch (error) {

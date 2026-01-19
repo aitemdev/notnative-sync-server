@@ -69,28 +69,64 @@ router.post('/', authenticateToken, async (req, res) => {
       // Check for generated files
       const generatedFiles: { name: string; data: string; type: 'image' | 'file' }[] = [];
       try {
-        const files = await fs.readdir(runDir);
-        for (const file of files) {
-            if (file === fileName) continue; // Skip script itself
-            
-            const ext = path.extname(file).toLowerCase();
-            const fileContent = await fs.readFile(path.join(runDir, file));
-            const base64Data = fileContent.toString('base64');
-            
-            if (['.png', '.jpg', '.jpeg', '.svg', '.gif', '.webp'].includes(ext)) {
-                console.log(`[Execute] Found generated image: ${file}`);
-                generatedFiles.push({
-                    name: file,
-                    data: base64Data,
-                    type: 'image'
-                });
+        // Recursive function to get all files
+        const getFilesRecursively = async (dir: string): Promise<string[]> => {
+          const entries = await fs.readdir(dir, { withFileTypes: true });
+          const files: string[] = [];
+          for (const entry of entries) {
+            const res = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+              files.push(...(await getFilesRecursively(res)));
             } else {
-                console.log(`[Execute] Found generated file: ${file}`);
-                generatedFiles.push({
-                    name: file,
-                    data: base64Data,
-                    type: 'file'
-                });
+              files.push(res);
+            }
+          }
+          return files;
+        };
+
+        const files = await getFilesRecursively(runDir);
+        
+        for (const filePath of files) {
+            const relativePath = path.relative(runDir, filePath);
+            if (relativePath === fileName) continue; // Skip script itself
+            
+            // Skip __pycache__ or hidden files
+            if (relativePath.includes('__pycache__') || path.basename(filePath).startsWith('.')) continue;
+
+            try {
+                const ext = path.extname(filePath).toLowerCase();
+                const fileContent = await fs.readFile(filePath);
+                const base64Data = fileContent.toString('base64');
+                // Use basename for the name to flatten structure for client, 
+                // OR keep relative path if we want to preserve structure?
+                // The client does path.join(saveDir, file.name). 
+                // If file.name has separators, it might try to write to subdirs which don't exist.
+                // It is safer to flatten for now, or ensure client creates dirs.
+                // Given the issue is "file not found", getting it at all is priority.
+                // Let's use basename to ensure it saves to the assets folder directly.
+                // BUT wait, if the markdown refers to "Assets/file.png", and we save as "file.png" in "Assets", it works?
+                // The markdown path "Enero 2026.assets/grafico.png" implies it expects it inside that folder.
+                // If we save it as "grafico.png" inside "note.assets", it IS "note.assets/grafico.png".
+                // So flattening is CORRECT for the client's current logic.
+                const name = path.basename(filePath);
+                
+                if (['.png', '.jpg', '.jpeg', '.svg', '.gif', '.webp'].includes(ext)) {
+                    console.log(`[Execute] Found generated image: ${name} (from ${relativePath})`);
+                    generatedFiles.push({
+                        name: name,
+                        data: base64Data,
+                        type: 'image'
+                    });
+                } else {
+                    console.log(`[Execute] Found generated file: ${name} (from ${relativePath})`);
+                    generatedFiles.push({
+                        name: name,
+                        data: base64Data,
+                        type: 'file'
+                    });
+                }
+            } catch (readErr) {
+                console.warn(`[Execute] Skipped file ${relativePath} due to read error:`, readErr);
             }
         }
       } catch (e) {

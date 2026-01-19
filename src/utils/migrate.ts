@@ -130,6 +130,34 @@ CREATE INDEX IF NOT EXISTS idx_attachments_user ON attachments(user_id);
 CREATE INDEX IF NOT EXISTS idx_attachments_note ON attachments(note_uuid);
 CREATE INDEX IF NOT EXISTS idx_attachments_hash ON attachments(file_hash);
 
+-- Calendar events table
+CREATE TABLE IF NOT EXISTS calendar_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  uuid VARCHAR(36) NOT NULL,
+  note_uuid VARCHAR(36),
+  title VARCHAR(500) NOT NULL,
+  description TEXT,
+  start_time BIGINT NOT NULL,
+  end_time BIGINT NOT NULL,
+  all_day BOOLEAN DEFAULT FALSE,
+  location VARCHAR(500),
+  color VARCHAR(50),
+  reminder_minutes INTEGER,
+  recurrence_rule VARCHAR(255),
+  recurrence_end BIGINT,
+  status SMALLINT DEFAULT 1,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  deleted_at BIGINT,
+  UNIQUE(user_id, uuid)
+);
+
+CREATE INDEX IF NOT EXISTS idx_calendar_events_user ON calendar_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_calendar_events_uuid ON calendar_events(uuid);
+CREATE INDEX IF NOT EXISTS idx_calendar_events_start ON calendar_events(start_time);
+CREATE INDEX IF NOT EXISTS idx_calendar_events_note ON calendar_events(note_uuid);
+
 -- Sync log (for tracking changes)
 CREATE TABLE IF NOT EXISTS sync_log (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
