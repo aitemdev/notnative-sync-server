@@ -117,10 +117,10 @@ CREATE TABLE IF NOT EXISTS attachments (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   note_uuid VARCHAR(36) NOT NULL,
   file_name VARCHAR(500) NOT NULL,
-  file_hash VARCHAR(64) UNIQUE NOT NULL,
+  file_hash VARCHAR(64) NOT NULL,
   file_size BIGINT NOT NULL,
   mime_type VARCHAR(100),
-  s3_key VARCHAR(500) UNIQUE NOT NULL,
+  s3_key VARCHAR(500) NOT NULL,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
   deleted_at BIGINT
@@ -129,6 +129,7 @@ CREATE TABLE IF NOT EXISTS attachments (
 CREATE INDEX IF NOT EXISTS idx_attachments_user ON attachments(user_id);
 CREATE INDEX IF NOT EXISTS idx_attachments_note ON attachments(note_uuid);
 CREATE INDEX IF NOT EXISTS idx_attachments_hash ON attachments(file_hash);
+CREATE INDEX IF NOT EXISTS idx_attachments_s3_key ON attachments(s3_key);
 
 -- Calendar events table
 CREATE TABLE IF NOT EXISTS calendar_events (
@@ -236,6 +237,13 @@ async function migrate() {
     } else {
       console.log('✅ deleted_at column already exists');
     }
+
+    // Migración adicional: eliminar restricciones UNIQUE de file_hash y s3_key
+    console.log('🔄 Checking for UNIQUE constraints on attachments file_hash and s3_key...');
+    await pool.query(`ALTER TABLE attachments DROP CONSTRAINT IF EXISTS attachments_file_hash_key`);
+    await pool.query(`ALTER TABLE attachments DROP CONSTRAINT IF EXISTS attachments_s3_key_key`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_attachments_s3_key ON attachments(s3_key)`);
+    console.log('✅ UNIQUE constraints removed for attachments file_hash/s3_key (if existed)');
 
     // Migración adicional: Añadir is_locked y password_hash a folders si no existen
     console.log('🔄 Checking for is_locked column in folders...');
