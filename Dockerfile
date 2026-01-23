@@ -11,8 +11,10 @@ RUN apt-get update && apt-get install -y \
     python3-pandas \
     python3-matplotlib \
     python3-pil \
-    && rm -rf /var/lib/apt/lists/* \
-    && pip3 install --no-cache-dir openpyxl xlsxwriter seaborn
+    && rm -rf /var/lib/apt/lists/*
+
+# Install additional Python packages via pip
+RUN pip3 install --no-cache-dir openpyxl xlsxwriter seaborn
 
 # Copiar package files
 COPY package*.json ./
