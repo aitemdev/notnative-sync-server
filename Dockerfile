@@ -13,8 +13,8 @@ RUN apt-get update && apt-get install -y \
     python3-pil \
     && rm -rf /var/lib/apt/lists/*
 
-# Install additional Python packages via pip
-RUN pip3 install --no-cache-dir openpyxl xlsxwriter seaborn
+# Install additional Python packages via pip (--break-system-packages is safe in Docker)
+RUN pip3 install --no-cache-dir --break-system-packages openpyxl xlsxwriter seaborn
 
 # Copiar package files
 COPY package*.json ./
