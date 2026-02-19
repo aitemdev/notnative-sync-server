@@ -553,12 +553,25 @@ router.post('/attachments/pull', async (req: AuthRequest, res: Response) => {
     // Get attachments for the specified notes that were updated/deleted after lastSyncTimestamp
     // Use >= instead of > to avoid race conditions
     const attachmentsResult = await pool.query(
-      `SELECT id, note_uuid, file_name, file_hash, file_size, mime_type, created_at, updated_at, deleted_at
-       FROM attachments 
-       WHERE user_id = $1 
-       AND note_uuid = ANY($2)
-       AND deleted_at IS NULL
-       AND updated_at >= $3`,
+      `SELECT dedup.id, dedup.note_uuid, dedup.file_name, dedup.file_hash, dedup.file_size, dedup.mime_type, dedup.created_at, dedup.updated_at, dedup.deleted_at
+       FROM (
+         SELECT DISTINCT ON (note_uuid, file_name)
+           id,
+           note_uuid,
+           file_name,
+           file_hash,
+           file_size,
+           mime_type,
+           created_at,
+           updated_at,
+           deleted_at
+         FROM attachments
+         WHERE user_id = $1
+         AND note_uuid = ANY($2)
+         AND deleted_at IS NULL
+         ORDER BY note_uuid, file_name, updated_at DESC, created_at DESC, id DESC
+       ) dedup
+       WHERE dedup.updated_at >= $3`,
       [userId, noteUuids, lastSyncTimestamp]
     );
 
