@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { z } from 'zod';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { randomUUID } from 'crypto';
 import pool from '../utils/db';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 
@@ -284,14 +285,17 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
 
         // 🔍 DEBUG: Check if note exists and log potential conflicts
         const existingNote = await client.query(
-          `SELECT updated_at, deleted_at, content_hash, name FROM notes WHERE user_id = $1 AND uuid = $2`,
+          `SELECT uuid, name, path, folder, content, content_hash, order_index, icon, icon_color, created_at, updated_at, deleted_at, is_favorite
+           FROM notes
+           WHERE user_id = $1 AND uuid = $2`,
           [userId, note.uuid]
         );
 
         if (existingNote.rows.length > 0) {
-          const serverUpdatedAt = toFiniteTimestamp(existingNote.rows[0].updated_at) ?? 0;
-          const serverDeletedAt = toFiniteTimestamp(existingNote.rows[0].deleted_at);
-          const serverHash = existingNote.rows[0].content_hash;
+          const existingRow = existingNote.rows[0];
+          const serverUpdatedAt = toFiniteTimestamp(existingRow.updated_at) ?? 0;
+          const serverDeletedAt = toFiniteTimestamp(existingRow.deleted_at);
+          const serverHash = existingRow.content_hash;
 
           // P0: Delete-wins protection
           // If server already has tombstone and client tries to resurrect with a non-deleted payload,
@@ -320,6 +324,46 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
             console.warn(`   Content hash - Client: ${note.content_hash}, Server: ${serverHash}`);
             console.warn(`   Device: ${deviceId}, Time offset: ${timeOffset}ms`);
             console.warn(`   🔥 Content differs but client timestamp is not newer - forcing update with incremented timestamp`);
+
+            const hasActiveConcurrentDivergence =
+              serverDeletedAt === null &&
+              safeDeletedAt === null &&
+              note.content_hash !== serverHash;
+
+            if (hasActiveConcurrentDivergence) {
+              const conflictTimestamp = Math.max(serverUpdatedAt, safeUpdatedAt) + 1;
+              const safeDeviceId = String(deviceId || 'unknown')
+                .toLowerCase()
+                .replace(/[^a-z0-9_-]/g, '-')
+                .slice(0, 24);
+              const conflictPath = `${existingRow.path || normalizedPath}.conflict-${safeDeviceId}-${conflictTimestamp}`;
+
+              await client.query(
+                `INSERT INTO notes (
+                   user_id, uuid, name, path, folder, content, content_hash, order_index,
+                   icon, icon_color, created_at, updated_at, deleted_at, is_favorite
+                 )
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NULL, $13)
+                 ON CONFLICT (user_id, path) DO NOTHING`,
+                [
+                  userId,
+                  randomUUID(),
+                  `${existingRow.name || note.name} [conflict]`,
+                  conflictPath,
+                  existingRow.folder,
+                  existingRow.content,
+                  existingRow.content_hash,
+                  existingRow.order_index,
+                  existingRow.icon,
+                  existingRow.icon_color,
+                  toFiniteTimestamp(existingRow.created_at) ?? conflictTimestamp,
+                  conflictTimestamp,
+                  existingRow.is_favorite ?? 0,
+                ]
+              );
+
+              console.warn(`🛡️ Preserved server version as conflict copy at path: ${conflictPath}`);
+            }
           }
         }
 
