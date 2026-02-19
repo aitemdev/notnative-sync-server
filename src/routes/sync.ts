@@ -8,6 +8,71 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 const router = Router();
 let wsServer: any = null;
 
+function toFiniteTimestamp(value: unknown): number | null {
+  if (typeof value === 'bigint') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  if (value instanceof Date) {
+    const parsed = value.getTime();
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function toIsoOrInvalid(value: unknown): string {
+  const timestamp = toFiniteTimestamp(value);
+  if (timestamp === null) {
+    return 'Invalid';
+  }
+
+  try {
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) {
+      return 'Invalid';
+    }
+    return date.toISOString();
+  } catch {
+    return 'Invalid';
+  }
+}
+
+function normalizeTimestamp(value: unknown, fallback: number): number {
+  const parsed = toFiniteTimestamp(value);
+  if (parsed === null) {
+    return fallback;
+  }
+
+  // Keep integer millisecond precision to match client semantics
+  const safe = Math.trunc(parsed);
+  return Number.isFinite(safe) ? safe : fallback;
+}
+
+function normalizeNullableTimestamp(value: unknown): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const parsed = toFiniteTimestamp(value);
+  if (parsed === null) {
+    return null;
+  }
+
+  const safe = Math.trunc(parsed);
+  return Number.isFinite(safe) ? safe : null;
+}
+
 export function setWebSocketServer(ws: any) {
   wsServer = ws;
 }
@@ -195,14 +260,16 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
         
         // Adjust timestamps using the calculated offset
         // This normalizes the client's time to the server's timeline
-        let safeUpdatedAt = note.updated_at;
-        let safeCreatedAt = note.created_at;
-        let safeDeletedAt = note.deleted_at;
+        let safeUpdatedAt = normalizeTimestamp(note.updated_at, serverTime);
+        let safeCreatedAt = normalizeTimestamp(note.created_at, safeUpdatedAt);
+        let safeDeletedAt = normalizeNullableTimestamp(note.deleted_at);
         
         if (clientTimestamp) {
-          safeUpdatedAt = safeUpdatedAt + timeOffset;
-          safeCreatedAt = safeCreatedAt + timeOffset;
-          if (safeDeletedAt) safeDeletedAt = safeDeletedAt + timeOffset;
+          safeUpdatedAt = normalizeTimestamp(safeUpdatedAt + timeOffset, serverTime);
+          safeCreatedAt = normalizeTimestamp(safeCreatedAt + timeOffset, safeUpdatedAt);
+          if (safeDeletedAt !== null) {
+            safeDeletedAt = normalizeTimestamp(safeDeletedAt + timeOffset, safeUpdatedAt);
+          }
         } else {
           // Fallback logic if clientTimestamp is missing (legacy clients)
           if (!safeUpdatedAt || safeUpdatedAt > serverTime + 300000) {
@@ -210,22 +277,46 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
           }
         }
 
+        // Keep creation timestamp bounded by update timestamp
+        if (safeCreatedAt > safeUpdatedAt) {
+          safeCreatedAt = safeUpdatedAt;
+        }
+
         // 🔍 DEBUG: Check if note exists and log potential conflicts
         const existingNote = await client.query(
-          `SELECT updated_at, content_hash, name FROM notes WHERE user_id = $1 AND uuid = $2`,
+          `SELECT updated_at, deleted_at, content_hash, name FROM notes WHERE user_id = $1 AND uuid = $2`,
           [userId, note.uuid]
         );
 
         if (existingNote.rows.length > 0) {
-          const serverUpdatedAt = existingNote.rows[0].updated_at;
+          const serverUpdatedAt = toFiniteTimestamp(existingNote.rows[0].updated_at) ?? 0;
+          const serverDeletedAt = toFiniteTimestamp(existingNote.rows[0].deleted_at);
           const serverHash = existingNote.rows[0].content_hash;
-          const serverName = existingNote.rows[0].name;
+
+          // P0: Delete-wins protection
+          // If server already has tombstone and client tries to resurrect with a non-deleted payload,
+          // reject stale resurrection at server edge.
+          if (serverDeletedAt !== null && safeDeletedAt === null) {
+            console.warn(`⛔ Stale resurrection blocked for note "${note.name}" (UUID: ${note.uuid})`);
+            console.warn(`   Server deleted_at: ${serverDeletedAt} (${toIsoOrInvalid(serverDeletedAt)})`);
+            console.warn(`   Client updated_at: ${safeUpdatedAt} (${toIsoOrInvalid(safeUpdatedAt)})`);
+            continue;
+          }
+
+          // If both sides are tombstones, keep the newest delete timestamp.
+          if (serverDeletedAt !== null && safeDeletedAt !== null && safeDeletedAt < serverDeletedAt) {
+            console.warn(`⏭️ Ignoring older tombstone for note "${note.name}" (UUID: ${note.uuid})`);
+            continue;
+          }
           
           // Log if we're potentially rejecting an update due to timestamp
           if (safeUpdatedAt <= serverUpdatedAt && note.content_hash !== serverHash) {
             console.warn(`⚠️ POTENTIAL CONFLICT for note "${note.name}" (UUID: ${note.uuid})`);
-            console.warn(`   Client timestamp: ${safeUpdatedAt} (${new Date(safeUpdatedAt).toISOString()})`);
-            console.warn(`   Server timestamp: ${serverUpdatedAt} (${new Date(serverUpdatedAt).toISOString()})`);
+            // Safe date conversion with validation
+            const clientDateStr = toIsoOrInvalid(safeUpdatedAt);
+            const serverDateStr = toIsoOrInvalid(serverUpdatedAt);
+            console.warn(`   Client timestamp: ${safeUpdatedAt} (${clientDateStr})`);
+            console.warn(`   Server timestamp: ${serverUpdatedAt} (${serverDateStr})`);
             console.warn(`   Content hash - Client: ${note.content_hash}, Server: ${serverHash}`);
             console.warn(`   Device: ${deviceId}, Time offset: ${timeOffset}ms`);
             console.warn(`   🔥 Content differs but client timestamp is not newer - forcing update with incremented timestamp`);
@@ -267,15 +358,19 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
              deleted_at = EXCLUDED.deleted_at,
              is_favorite = EXCLUDED.is_favorite
            WHERE 
-             -- Always update if content/metadata changed, regardless of timestamp
-             EXCLUDED.content_hash IS DISTINCT FROM notes.content_hash
-             OR EXCLUDED.deleted_at IS DISTINCT FROM notes.deleted_at
-             OR EXCLUDED.name != notes.name
-             OR EXCLUDED.path != notes.path
-             OR EXCLUDED.folder IS DISTINCT FROM notes.folder
-             OR EXCLUDED.is_favorite IS DISTINCT FROM notes.is_favorite
-             -- Or if timestamp is genuinely newer
-             OR EXCLUDED.updated_at > notes.updated_at`,
+             -- P0 delete-wins: never resurrect a tombstoned note with a non-deleted payload
+             NOT (notes.deleted_at IS NOT NULL AND EXCLUDED.deleted_at IS NULL)
+             AND (
+               -- Always update if content/metadata changed, regardless of timestamp
+               EXCLUDED.content_hash IS DISTINCT FROM notes.content_hash
+               OR EXCLUDED.deleted_at IS DISTINCT FROM notes.deleted_at
+               OR EXCLUDED.name != notes.name
+               OR EXCLUDED.path != notes.path
+               OR EXCLUDED.folder IS DISTINCT FROM notes.folder
+               OR EXCLUDED.is_favorite IS DISTINCT FROM notes.is_favorite
+               -- Or if timestamp is genuinely newer
+               OR EXCLUDED.updated_at > notes.updated_at
+             )`,
           [userId, note.uuid, note.name, normalizedPath, normalizedFolder, note.content, note.content_hash, note.order_index, note.icon, note.icon_color, safeCreatedAt, safeUpdatedAt, safeDeletedAt, note.is_favorite ?? 0]
         );
       }
@@ -308,6 +403,19 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
     if (calendar_events) {
       const serverTime = Date.now();
       for (const event of calendar_events) {
+        // Validate timestamps before processing
+        if (!event.start_time || isNaN(event.start_time) || !event.end_time || isNaN(event.end_time)) {
+          console.error(`❌ Invalid calendar event timestamps for "${event.title}" (UUID: ${event.uuid})`);
+          console.error(`   start_time: ${event.start_time}, end_time: ${event.end_time}`);
+          continue; // Skip this event
+        }
+        
+        if (!event.created_at || isNaN(event.created_at) || !event.updated_at || isNaN(event.updated_at)) {
+          console.error(`❌ Invalid calendar event metadata timestamps for "${event.title}" (UUID: ${event.uuid})`);
+          console.error(`   created_at: ${event.created_at}, updated_at: ${event.updated_at}`);
+          continue; // Skip this event
+        }
+        
         // Adjust timestamps if client timestamp is provided
         let safeUpdatedAt = event.updated_at;
         let safeCreatedAt = event.created_at;

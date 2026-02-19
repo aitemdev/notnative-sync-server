@@ -101,7 +101,28 @@ export class WebSocketSyncServer {
    */
   private async handleMessage(ws: AuthenticatedWebSocket, data: Buffer): Promise<void> {
     try {
-      const message: WSMessage = JSON.parse(data.toString());
+      const dataString = data.toString();
+      
+      // Validate data before parsing
+      if (!dataString || dataString.trim().length === 0) {
+        console.warn('⚠️ Received empty message');
+        return;
+      }
+
+      let message: WSMessage;
+      try {
+        message = JSON.parse(dataString);
+      } catch (parseError) {
+        console.error('❌ JSON parse error:', parseError);
+        console.error('   Raw data:', dataString.substring(0, 200)); // Log first 200 chars
+        return;
+      }
+
+      // Validate message structure
+      if (!message || typeof message !== 'object' || !message.type) {
+        console.warn('⚠️ Invalid message structure:', message);
+        return;
+      }
 
       switch (message.type) {
         case 'heartbeat':
@@ -143,9 +164,14 @@ export class WebSocketSyncServer {
     let notifiedCount = 0;
     userClients.forEach((client) => {
       if (client.deviceId !== excludeDeviceId && client.readyState === WebSocket.OPEN) {
-        console.log(`   ➡️  Notifying device: ${client.deviceId}`);
-        client.send(JSON.stringify(message));
-        notifiedCount++;
+        try {
+          console.log(`   ➡️  Notifying device: ${client.deviceId}`);
+          const jsonString = JSON.stringify(message);
+          client.send(jsonString);
+          notifiedCount++;
+        } catch (error) {
+          console.error(`❌ Error notifying device ${client.deviceId}:`, error);
+        }
       }
     });
     
@@ -176,8 +202,22 @@ export class WebSocketSyncServer {
    * Send message to specific client
    */
   private sendToClient(ws: WebSocket, message: WSMessage): void {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(message));
+    if (ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    try {
+      // Validate message before sending
+      if (!message || typeof message !== 'object' || !message.type) {
+        console.error('❌ Invalid message structure:', message);
+        return;
+      }
+
+      const jsonString = JSON.stringify(message);
+      ws.send(jsonString);
+    } catch (error) {
+      console.error('❌ Error sending message to client:', error);
+      console.error('   Message:', message);
     }
   }
 
