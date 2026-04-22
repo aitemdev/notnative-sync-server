@@ -248,6 +248,10 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
     const serverTime = Date.now();
     const timeOffset = clientTimestamp ? serverTime - clientTimestamp : 0;
     
+    // Track rejected notes and detected conflicts for client feedback
+    const rejectedNotes: string[] = [];
+    const detectedConflicts: Array<{ uuid: string; name: string; reason: string; clientTimestamp: number; serverTimestamp: number }> = [];
+    
     if (clientTimestamp && Math.abs(timeOffset) > 60000) {
       console.log(`🕒 Clock skew detected: Client ${deviceId} is off by ${timeOffset}ms`);
     }
@@ -285,7 +289,7 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
 
         // 🔍 DEBUG: Check if note exists and log potential conflicts
         const existingNote = await client.query(
-          `SELECT uuid, name, path, folder, content, content_hash, order_index, icon, icon_color, created_at, updated_at, deleted_at, is_favorite
+          `SELECT uuid, name, path, folder, content, content_hash, order_index, icon, icon_color, created_at, updated_at, deleted_at, is_favorite, last_modified_by_device
            FROM notes
            WHERE user_id = $1 AND uuid = $2`,
           [userId, note.uuid]
@@ -304,6 +308,7 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
             console.warn(`⛔ Stale resurrection blocked for note "${note.name}" (UUID: ${note.uuid})`);
             console.warn(`   Server deleted_at: ${serverDeletedAt} (${toIsoOrInvalid(serverDeletedAt)})`);
             console.warn(`   Client updated_at: ${safeUpdatedAt} (${toIsoOrInvalid(safeUpdatedAt)})`);
+            rejectedNotes.push(note.uuid);
             continue;
           }
 
@@ -313,26 +318,35 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
             continue;
           }
           
-          // Log if we're potentially rejecting an update due to timestamp
-          if (safeUpdatedAt <= serverUpdatedAt && note.content_hash !== serverHash) {
-            console.warn(`⚠️ POTENTIAL CONFLICT for note "${note.name}" (UUID: ${note.uuid})`);
-            // Safe date conversion with validation
-            const clientDateStr = toIsoOrInvalid(safeUpdatedAt);
-            const serverDateStr = toIsoOrInvalid(serverUpdatedAt);
-            console.warn(`   Client timestamp: ${safeUpdatedAt} (${clientDateStr})`);
-            console.warn(`   Server timestamp: ${serverUpdatedAt} (${serverDateStr})`);
-            console.warn(`   Content hash - Client: ${note.content_hash}, Server: ${serverHash}`);
-            console.warn(`   Device: ${deviceId}, Time offset: ${timeOffset}ms`);
-            console.warn(`   🔥 Content differs but client timestamp is not newer - forcing update with incremented timestamp`);
+          // Conflict detection: only create conflict copy when there is GENUINE concurrent editing
+          // i.e., a DIFFERENT device modified the server version AND content hashes differ
+          const serverLastDevice = existingRow.last_modified_by_device;
+          const isDifferentDevice = serverLastDevice && serverLastDevice !== deviceId;
+          const contentDiverged = note.content_hash !== serverHash && serverHash !== null;
+          const bothAlive = serverDeletedAt === null && safeDeletedAt === null;
+          
+          if (bothAlive && contentDiverged && isDifferentDevice) {
+            // True concurrent edit: different device changed the note and content differs
+            // Only create conflict if the server version was modified recently (within 60s)
+            // to avoid creating conflicts from stale data
+            const CONCURRENT_WINDOW_MS = 60000;
+            const serverModifiedRecently = (serverTime - serverUpdatedAt) < CONCURRENT_WINDOW_MS;
+            
+            if (serverModifiedRecently) {
+              console.warn(`⚠️ TRUE CONFLICT for note "${note.name}" (UUID: ${note.uuid})`);
+              console.warn(`   Server device: ${serverLastDevice}, Push device: ${deviceId}`);
+              console.warn(`   Content hash - Client: ${note.content_hash}, Server: ${serverHash}`);
 
-            const hasActiveConcurrentDivergence =
-              serverDeletedAt === null &&
-              safeDeletedAt === null &&
-              note.content_hash !== serverHash;
+              detectedConflicts.push({
+                uuid: note.uuid,
+                name: note.name,
+                reason: 'concurrent_edit',
+                clientTimestamp: safeUpdatedAt,
+                serverTimestamp: serverUpdatedAt
+              });
 
-            if (hasActiveConcurrentDivergence) {
               const conflictTimestamp = Math.max(serverUpdatedAt, safeUpdatedAt) + 1;
-              const safeDeviceId = String(deviceId || 'unknown')
+              const safeDeviceId = String(serverLastDevice || 'unknown')
                 .toLowerCase()
                 .replace(/[^a-z0-9_-]/g, '-')
                 .slice(0, 24);
@@ -341,9 +355,9 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
               await client.query(
                 `INSERT INTO notes (
                    user_id, uuid, name, path, folder, content, content_hash, order_index,
-                   icon, icon_color, created_at, updated_at, deleted_at, is_favorite
+                   icon, icon_color, created_at, updated_at, deleted_at, is_favorite, last_modified_by_device
                  )
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NULL, $13)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NULL, $13, $14)
                  ON CONFLICT (user_id, path) DO NOTHING`,
                 [
                   userId,
@@ -359,29 +373,50 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
                   toFiniteTimestamp(existingRow.created_at) ?? conflictTimestamp,
                   conflictTimestamp,
                   existingRow.is_favorite ?? 0,
+                  serverLastDevice,
                 ]
               );
 
               console.warn(`🛡️ Preserved server version as conflict copy at path: ${conflictPath}`);
+            } else {
+              console.log(`ℹ️ Content differs but server version is stale (${serverTime - serverUpdatedAt}ms old), accepting push without conflict copy`);
             }
+          } else if (contentDiverged && bothAlive && !isDifferentDevice) {
+            console.log(`ℹ️ Content differs but same device (${deviceId}), accepting push without conflict copy`);
           }
         }
 
         // Handle path collision with different UUID
-        // If a note exists with the same path but different UUID, we rename the old one
-        // to avoid unique constraint violation on (user_id, path).
-        await client.query(
-          `UPDATE notes 
-           SET path = path || '.conflict-' || CAST(EXTRACT(EPOCH FROM NOW()) AS INTEGER)
-           WHERE user_id = $1 AND path = $2 AND uuid != $3`,
+        // If a note exists with the same path but different UUID, check if content is identical.
+        // If identical content, silently remove the duplicate; otherwise rename the old one.
+        const pathCollision = await client.query(
+          `SELECT uuid, content_hash FROM notes WHERE user_id = $1 AND path = $2 AND uuid != $3`,
           [userId, normalizedPath, note.uuid]
         );
+        if (pathCollision.rows.length > 0) {
+          const collision = pathCollision.rows[0];
+          if (collision.content_hash && collision.content_hash === note.content_hash) {
+            // Same content, different UUID — soft-delete the duplicate to avoid conflict noise
+            await client.query(
+              `UPDATE notes SET deleted_at = $1 WHERE user_id = $2 AND uuid = $3`,
+              [serverTime, userId, collision.uuid]
+            );
+            console.log(`🧹 Soft-deleted duplicate note with same content at path: ${normalizedPath} (UUID: ${collision.uuid})`);
+          } else {
+            await client.query(
+              `UPDATE notes 
+               SET path = path || '.conflict-' || CAST(EXTRACT(EPOCH FROM NOW()) AS INTEGER)
+               WHERE user_id = $1 AND path = $2 AND uuid != $3`,
+              [userId, normalizedPath, note.uuid]
+            );
+          }
+        }
 
         // 🛠️ FIX: Use content_hash for conflict detection instead of just timestamp
         // This prevents losing updates when timestamps are skewed
         await client.query(
-          `INSERT INTO notes (user_id, uuid, name, path, folder, content, content_hash, order_index, icon, icon_color, created_at, updated_at, deleted_at, is_favorite)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          `INSERT INTO notes (user_id, uuid, name, path, folder, content, content_hash, order_index, icon, icon_color, created_at, updated_at, deleted_at, is_favorite, last_modified_by_device)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
            ON CONFLICT (user_id, uuid) DO UPDATE SET
              name = EXCLUDED.name,
              path = EXCLUDED.path,
@@ -400,7 +435,8 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
                  GREATEST(EXCLUDED.updated_at, notes.updated_at)
              END,
              deleted_at = EXCLUDED.deleted_at,
-             is_favorite = EXCLUDED.is_favorite
+             is_favorite = EXCLUDED.is_favorite,
+             last_modified_by_device = EXCLUDED.last_modified_by_device
            WHERE 
              -- P0 delete-wins: never resurrect a tombstoned note with a non-deleted payload
              NOT (notes.deleted_at IS NOT NULL AND EXCLUDED.deleted_at IS NULL)
@@ -415,16 +451,36 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
                -- Or if timestamp is genuinely newer
                OR EXCLUDED.updated_at > notes.updated_at
              )`,
-          [userId, note.uuid, note.name, normalizedPath, normalizedFolder, note.content, note.content_hash, note.order_index, note.icon, note.icon_color, safeCreatedAt, safeUpdatedAt, safeDeletedAt, note.is_favorite ?? 0]
+          [userId, note.uuid, note.name, normalizedPath, normalizedFolder, note.content, note.content_hash, note.order_index, note.icon, note.icon_color, safeCreatedAt, safeUpdatedAt, safeDeletedAt, note.is_favorite ?? 0, deviceId]
         );
       }
     }
 
     // Upsert Folders
     if (folders) {
-      const serverTime = Date.now();
       for (const folder of folders) {
-        const safeUpdatedAt = serverTime;
+        // Apply same clock-skew correction as notes
+        let safeFolderUpdatedAt = normalizeTimestamp(folder.updated_at, serverTime);
+        let safeFolderCreatedAt = normalizeTimestamp(folder.created_at, safeFolderUpdatedAt);
+        let safeFolderDeletedAt = normalizeNullableTimestamp(folder.deleted_at);
+
+        if (clientTimestamp) {
+          safeFolderUpdatedAt = normalizeTimestamp(safeFolderUpdatedAt + timeOffset, serverTime);
+          safeFolderCreatedAt = normalizeTimestamp(safeFolderCreatedAt + timeOffset, safeFolderUpdatedAt);
+          if (safeFolderDeletedAt !== null) {
+            safeFolderDeletedAt = normalizeTimestamp(safeFolderDeletedAt + timeOffset, safeFolderUpdatedAt);
+          }
+        } else {
+          // Fallback for legacy clients without clientTimestamp
+          if (!safeFolderUpdatedAt || safeFolderUpdatedAt > serverTime + 300000) {
+            safeFolderUpdatedAt = serverTime;
+          }
+        }
+
+        if (safeFolderCreatedAt > safeFolderUpdatedAt) {
+          safeFolderCreatedAt = safeFolderUpdatedAt;
+        }
+
         await client.query(
           `INSERT INTO folders (user_id, path, icon, color, icon_color, order_index, created_at, updated_at, deleted_at, is_locked, password_hash, is_favorite)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
@@ -433,12 +489,24 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
              color = EXCLUDED.color,
              icon_color = EXCLUDED.icon_color,
              order_index = EXCLUDED.order_index,
-             updated_at = EXCLUDED.updated_at,
+             updated_at = CASE
+               WHEN EXCLUDED.updated_at > folders.updated_at THEN EXCLUDED.updated_at
+               ELSE folders.updated_at
+             END,
              deleted_at = EXCLUDED.deleted_at,
              is_locked = EXCLUDED.is_locked,
              password_hash = EXCLUDED.password_hash,
-             is_favorite = EXCLUDED.is_favorite`,
-          [userId, folder.path, folder.icon, folder.color, folder.icon_color, folder.order_index, folder.created_at, safeUpdatedAt, folder.deleted_at ? safeUpdatedAt : null, folder.is_locked || false, folder.password_hash || null, folder.is_favorite ?? 0]
+             is_favorite = EXCLUDED.is_favorite
+           WHERE
+             EXCLUDED.icon IS DISTINCT FROM folders.icon
+             OR EXCLUDED.color IS DISTINCT FROM folders.color
+             OR EXCLUDED.icon_color IS DISTINCT FROM folders.icon_color
+             OR EXCLUDED.order_index IS DISTINCT FROM folders.order_index
+             OR EXCLUDED.deleted_at IS DISTINCT FROM folders.deleted_at
+             OR EXCLUDED.is_locked IS DISTINCT FROM folders.is_locked
+             OR EXCLUDED.is_favorite IS DISTINCT FROM folders.is_favorite
+             OR EXCLUDED.updated_at > folders.updated_at`,
+          [userId, folder.path, folder.icon, folder.color, folder.icon_color, folder.order_index, safeFolderCreatedAt, safeFolderUpdatedAt, safeFolderDeletedAt, folder.is_locked || false, folder.password_hash || null, folder.is_favorite ?? 0]
         );
       }
     }
@@ -491,9 +559,22 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
              recurrence_rule = EXCLUDED.recurrence_rule,
              recurrence_end = EXCLUDED.recurrence_end,
              status = EXCLUDED.status,
-             updated_at = EXCLUDED.updated_at,
+             updated_at = CASE
+               WHEN EXCLUDED.title != calendar_events.title
+                 OR EXCLUDED.description IS DISTINCT FROM calendar_events.description
+                 OR EXCLUDED.start_time != calendar_events.start_time
+                 OR EXCLUDED.end_time != calendar_events.end_time
+               THEN GREATEST(EXCLUDED.updated_at, calendar_events.updated_at + 1)
+               ELSE GREATEST(EXCLUDED.updated_at, calendar_events.updated_at)
+             END,
              deleted_at = EXCLUDED.deleted_at
-           WHERE calendar_events.updated_at <= EXCLUDED.updated_at`,
+           WHERE
+             EXCLUDED.title != calendar_events.title
+             OR EXCLUDED.description IS DISTINCT FROM calendar_events.description
+             OR EXCLUDED.start_time != calendar_events.start_time
+             OR EXCLUDED.end_time != calendar_events.end_time
+             OR EXCLUDED.deleted_at IS DISTINCT FROM calendar_events.deleted_at
+             OR EXCLUDED.updated_at > calendar_events.updated_at`,
           [
             userId, 
             event.uuid, 
@@ -524,7 +605,12 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
       wsServer.notifySyncAvailable(userId, deviceId);
     }
 
-    res.json({ success: true, timestamp: Date.now() });
+    res.json({ 
+      success: true, 
+      timestamp: Date.now(),
+      rejected: rejectedNotes,
+      conflicts: detectedConflicts
+    });
 
   } catch (error) {
     await client.query('ROLLBACK');

@@ -309,6 +309,22 @@ async function migrate() {
       console.log('✅ is_favorite column already exists in folders');
     }
     
+    // Migration: Add last_modified_by_device to notes for conflict detection
+    console.log('🔄 Checking for last_modified_by_device column in notes...');
+    const checkDeviceCol = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name='notes' AND column_name='last_modified_by_device'
+    `);
+    
+    if (checkDeviceCol.rows.length === 0) {
+      console.log('📝 Adding last_modified_by_device column to notes table...');
+      await pool.query('ALTER TABLE notes ADD COLUMN last_modified_by_device VARCHAR(255)');
+      console.log('✅ last_modified_by_device column added successfully');
+    } else {
+      console.log('✅ last_modified_by_device column already exists in notes');
+    }
+
     console.log('✅ Database migrations completed successfully');
     process.exit(0);
   } catch (error) {
