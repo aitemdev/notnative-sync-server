@@ -159,6 +159,27 @@ CREATE INDEX IF NOT EXISTS idx_calendar_events_uuid ON calendar_events(uuid);
 CREATE INDEX IF NOT EXISTS idx_calendar_events_start ON calendar_events(start_time);
 CREATE INDEX IF NOT EXISTS idx_calendar_events_note ON calendar_events(note_uuid);
 
+-- Notion-style databases (coarse last-write-wins snapshots)
+-- The whole database (columns + rows + cells + views) is stored as one
+-- JSONB blob keyed by uuid. This trades granular conflict resolution
+-- for simplicity; multi-device concurrent edits resolve by updated_at.
+CREATE TABLE IF NOT EXISTS databases (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  uuid VARCHAR(36) NOT NULL,
+  name VARCHAR(500) NOT NULL,
+  icon VARCHAR(100),
+  snapshot JSONB NOT NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  deleted_at BIGINT,
+  UNIQUE(user_id, uuid)
+);
+
+CREATE INDEX IF NOT EXISTS idx_databases_user ON databases(user_id);
+CREATE INDEX IF NOT EXISTS idx_databases_uuid ON databases(uuid);
+CREATE INDEX IF NOT EXISTS idx_databases_updated ON databases(user_id, updated_at DESC);
+
 -- Sync log (for tracking changes)
 CREATE TABLE IF NOT EXISTS sync_log (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

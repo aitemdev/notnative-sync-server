@@ -130,10 +130,21 @@ const CalendarEventSchema = z.object({
   deleted_at: z.number().nullable().optional(),
 });
 
+const DatabaseSchema = z.object({
+  uuid: z.string(),
+  name: z.string(),
+  icon: z.string().nullable().optional(),
+  snapshot: z.any(),
+  created_at: z.number(),
+  updated_at: z.number(),
+  deleted_at: z.number().nullable().optional(),
+});
+
 const PushSchema = z.object({
   notes: z.array(NoteSchema).optional(),
   folders: z.array(FolderSchema).optional(),
   calendar_events: z.array(CalendarEventSchema).optional(),
+  databases: z.array(DatabaseSchema).optional(),
   deviceId: z.string(),
   clientTimestamp: z.number().optional(),
 });
@@ -212,11 +223,33 @@ router.post('/pull', async (req: AuthRequest, res: Response) => {
       end_time: Number(row.end_time),
       recurrence_end: row.recurrence_end ? Number(row.recurrence_end) : null,
     }));
-    
+
+    // Get changed databases (Notion-style)
+    const databasesResult = await pool.query(
+      `SELECT uuid, name, icon, snapshot, created_at, updated_at, deleted_at
+       FROM databases
+       WHERE user_id = $1
+       AND (
+         (updated_at >= $2 AND deleted_at IS NULL)
+         OR (deleted_at >= $2 AND $2 > 0)
+       )`,
+      [userId, lastSyncTimestamp]
+    );
+
+    const databases = databasesResult.rows.map(row => ({
+      uuid: row.uuid,
+      name: row.name,
+      icon: row.icon,
+      snapshot: row.snapshot,
+      created_at: Number(row.created_at),
+      updated_at: Number(row.updated_at),
+      deleted_at: row.deleted_at ? Number(row.deleted_at) : null,
+    }));
+
     // Log notes with missing content for debugging
     const notesWithoutContent = notes.filter(n => !n.content && !n.deleted_at);
     if (notesWithoutContent.length > 0) {
-      console.warn(`⚠️ Found ${notesWithoutContent.length} notes without content:`, 
+      console.warn(`⚠️ Found ${notesWithoutContent.length} notes without content:`,
         notesWithoutContent.map(n => `${n.name} (${n.uuid})`));
     }
 
@@ -224,6 +257,7 @@ router.post('/pull', async (req: AuthRequest, res: Response) => {
       notes,
       folders,
       calendar_events,
+      databases,
       timestamp: Date.now(),
     });
 
@@ -387,8 +421,10 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
         }
 
         // Handle path collision with different UUID
-        // If a note exists with the same path but different UUID, check if content is identical.
-        // If identical content, silently remove the duplicate; otherwise rename the old one.
+        // The (user_id, path) UNIQUE constraint applies even to soft-deleted rows, so
+        // both branches MUST also free the path or the subsequent INSERT will violate
+        // notes_user_id_path_key. Using the uuid as suffix guarantees the renamed path
+        // is unique (epoch-based suffixes can collide for same-second concurrent writes).
         const pathCollision = await client.query(
           `SELECT uuid, content_hash FROM notes WHERE user_id = $1 AND path = $2 AND uuid != $3`,
           [userId, normalizedPath, note.uuid]
@@ -396,18 +432,22 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
         if (pathCollision.rows.length > 0) {
           const collision = pathCollision.rows[0];
           if (collision.content_hash && collision.content_hash === note.content_hash) {
-            // Same content, different UUID — soft-delete the duplicate to avoid conflict noise
+            // Same content, different UUID — soft-delete AND free the path
             await client.query(
-              `UPDATE notes SET deleted_at = $1 WHERE user_id = $2 AND uuid = $3`,
+              `UPDATE notes
+                 SET deleted_at = $1,
+                     path = path || '.dup-' || $3::text
+               WHERE user_id = $2 AND uuid = $3`,
               [serverTime, userId, collision.uuid]
             );
             console.log(`🧹 Soft-deleted duplicate note with same content at path: ${normalizedPath} (UUID: ${collision.uuid})`);
           } else {
+            // Rename the colliding row so its path is freed; uuid suffix guarantees uniqueness
             await client.query(
-              `UPDATE notes 
-               SET path = path || '.conflict-' || CAST(EXTRACT(EPOCH FROM NOW()) AS INTEGER)
-               WHERE user_id = $1 AND path = $2 AND uuid != $3`,
-              [userId, normalizedPath, note.uuid]
+              `UPDATE notes
+                 SET path = path || '.conflict-' || uuid::text
+               WHERE user_id = $1 AND uuid = $2`,
+              [userId, collision.uuid]
             );
           }
         }
@@ -598,6 +638,57 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
       }
     }
 
+    // Upsert Notion-style databases
+    const databases = (req.body?.databases ?? []) as Array<{
+      uuid: string;
+      name: string;
+      icon?: string | null;
+      snapshot: any;
+      created_at: number;
+      updated_at: number;
+      deleted_at?: number | null;
+    }>;
+    if (Array.isArray(databases) && databases.length > 0) {
+      for (const dbItem of databases) {
+        if (!dbItem?.uuid || typeof dbItem.uuid !== 'string') {
+          console.warn('[push:databases] skipping entry without uuid');
+          continue;
+        }
+        let safeCreatedAt = normalizeTimestamp(dbItem.created_at, Date.now());
+        let safeUpdatedAt = normalizeTimestamp(dbItem.updated_at, Date.now());
+        let safeDeletedAt = normalizeNullableTimestamp(dbItem.deleted_at);
+        if (clientTimestamp) {
+          safeCreatedAt += timeOffset;
+          safeUpdatedAt += timeOffset;
+          if (safeDeletedAt != null) safeDeletedAt += timeOffset;
+        }
+        await client.query(
+          `INSERT INTO databases (
+             user_id, uuid, name, icon, snapshot, created_at, updated_at, deleted_at
+           )
+           VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
+           ON CONFLICT (user_id, uuid) DO UPDATE SET
+             name = EXCLUDED.name,
+             icon = EXCLUDED.icon,
+             snapshot = EXCLUDED.snapshot,
+             updated_at = GREATEST(EXCLUDED.updated_at, databases.updated_at),
+             deleted_at = EXCLUDED.deleted_at
+           WHERE EXCLUDED.updated_at > databases.updated_at
+              OR EXCLUDED.deleted_at IS DISTINCT FROM databases.deleted_at`,
+          [
+            userId,
+            dbItem.uuid,
+            dbItem.name,
+            dbItem.icon ?? null,
+            JSON.stringify(dbItem.snapshot ?? {}),
+            safeCreatedAt,
+            safeUpdatedAt,
+            safeDeletedAt,
+          ]
+        );
+      }
+    }
+
     await client.query('COMMIT');
 
     // Notify other clients
@@ -605,8 +696,8 @@ router.post('/push', async (req: AuthRequest, res: Response) => {
       wsServer.notifySyncAvailable(userId, deviceId);
     }
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       timestamp: Date.now(),
       rejected: rejectedNotes,
       conflicts: detectedConflicts

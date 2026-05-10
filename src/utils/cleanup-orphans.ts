@@ -32,26 +32,33 @@ async function findOrphanedAttachments(): Promise<Attachment[]> {
   console.log('🔍 Buscando archivos adjuntos huérfanos...');
 
   const result = await pool.query<Attachment>(
-    `SELECT 
-      a.id, 
-      a.user_id, 
-      a.file_name, 
-      a.file_size, 
-      a.s3_key, 
+    `SELECT
+      a.id,
+      a.user_id,
+      a.file_name,
+      a.file_size,
+      a.s3_key,
       a.created_at,
       a.note_uuid
      FROM attachments a
      WHERE a.deleted_at IS NULL
        AND a.created_at < $1
        AND NOT EXISTS (
-         SELECT 1 
-         FROM notes n 
-         WHERE n.user_id = a.user_id 
+         SELECT 1
+         FROM notes n
+         WHERE n.user_id = a.user_id
            AND n.deleted_at IS NULL
            AND (
              n.content LIKE '%' || a.file_name || '%'
              OR n.content LIKE '%' || a.id || '%'
            )
+       )
+       AND NOT EXISTS (
+         SELECT 1
+         FROM databases d
+         WHERE d.user_id = a.user_id
+           AND d.deleted_at IS NULL
+           AND d.snapshot::text LIKE '%' || a.id || '%'
        )`,
     [Date.now() - GRACE_PERIOD_MS]
   );
